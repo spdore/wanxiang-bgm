@@ -1,37 +1,57 @@
-# 万象 BGM 播放器
+# Wanxiang BGM Player
 
-Windows 10/11 桌面软件，全局快捷键播放 MP3，将所选麦克风和软件音乐混合到 VB-CABLE。默认空曲库，可添加/移除歌曲及修改快捷键；耳机与虚拟通道音乐音量独立调节。
+A Windows 10/11 desktop soundboard that plays MP3 files with global keyboard shortcuts and mixes your selected microphone with the app's music through VB-CABLE. The song library starts empty. Add or remove songs, customize shortcuts, and adjust headphone and virtual-channel music volume independently.
 
-## 下载安装
+## Download and Install
 
-[下载安装包](https://github.com/spdore/wanxiang-bgm/raw/refs/heads/main/WanxiangBgmSetup.exe)
+[Download the Windows installer](https://github.com/spdore/wanxiang-bgm/raw/refs/heads/main/WanxiangBgmSetup.exe)
 
-安装包内含 VB-CABLE 普通版完整官方驱动。检测到已有驱动时跳过；缺少驱动时可选择打开官方驱动安装程序。需要管理员授权，按官方提示安装并重启。程序本体安装到当前用户目录。
+The installer includes the complete, unmodified official standard VB-CABLE driver package. It skips driver installation when VB-CABLE is already detected. Otherwise, you can choose to launch the official driver installer. Driver installation requires administrator approval; follow the vendor's instructions and restart Windows when prompted. The player itself installs for the current user.
 
-首次启动没有歌曲，点击“添加歌曲”导入自己的 MP3，再点击按键栏绑定快捷键。播放时按任意曲目键停止，最多同时一首。耳机输出跟随 Windows 默认设备；聊天软件麦克风选择 **CABLE Output**，播放器写入 **CABLE Input**。
+## Quick Start
 
-## 系统要求
+1. Launch the player. No songs or shortcuts are configured by default.
+2. Click the Add Songs button (labeled “添加歌曲” in the Chinese interface) to import your own MP3 files.
+3. Click a song's key field to assign a global shortcut.
+4. Press its shortcut to start playback. While music is playing, pressing any song shortcut stops it. Only one song can play at a time.
+5. Select your physical microphone in the player, then select **CABLE Output** as the microphone in your game or chat app.
 
-Windows 10/11 和 .NET Framework 4.8。安装包尚未签名。虚拟音频驱动为第三方软件；卸载播放器不会移除共享驱动，也不会删除个人歌曲和设置。
+The player sends the selected microphone and its own BGM to **CABLE Input**. Other computer audio is not included. Chat apps receive the mixed signal from **CABLE Output**.
 
-## 构建
+Headphone playback follows the Windows default output device. Headphone music volume and music sent to the virtual channel have separate sliders. Each slider's 0–100% range maps to an actual gain of 0–30%; virtual-channel music volume does not change microphone volume.
 
-在项目根目录运行 PowerShell：
+Removing a song from the library keeps its audio file.
 
-    .\build.ps1
-    .\build-share.ps1
+## Requirements
 
-源码是 C# / WinForms，使用 .NET Framework 编译器。输出 BgmHotkey.exe 或分享安装包目录内的安装 EXE。
+- Windows 10 or Windows 11.
+- .NET Framework 4.8.
+- VB-CABLE for sending microphone and music together to chat apps.
 
-## 数据与隐私
+The installer is currently unsigned. Uninstalling the player preserves personal songs and settings and does not remove the shared VB-CABLE driver.
 
-分享版默认歌曲列表和快捷键为空，数据保存在当前使用者的 `%LOCALAPPDATA%\BgmHotkeyShare`，导入歌曲保存在该目录的 bgm 子目录。仓库不包含开发者歌曲、设备设置、录音、日志、截图或本机绝对路径。提交使用 GitHub noreply 邮箱。
+## Build from Source
 
-## 第三方组件
+The application uses C# and Windows Forms with the .NET Framework compiler. Run these commands in PowerShell from the repository root:
 
-VB-CABLE 由 VB-Audio 提供，采用 donationware 模式，欢迎捐赠或购买许可。
+```powershell
+.\build.ps1
+.\build-share.ps1
+```
 
-- 官方来源：https://vb-audio.com/Cable/
-- 分发规则：https://vb-audio.com/Services/licensing.htm
+The first command builds `BgmHotkey.exe`. The second creates the distribution installer in the `分享安装包` directory.
 
-VBCABLE_Driver_Pack45.zip 为未修改的完整官方驱动包，包含原始 readme 和许可。专业领域分发须遵循官方额外许可条件；VB-CABLE A+B/C+D 不包含在本项目中。第三方组件保留各自版权和许可。
+## Data and Privacy
+
+The distribution build starts with an empty song library and no shortcut bindings. User data is stored in `%LOCALAPPDATA%\BgmHotkeyShare`, with imported songs in its `bgm` subdirectory.
+
+The repository excludes the developer's songs, device settings, recordings, logs, screenshots, and machine-specific absolute paths. Published commits use a GitHub noreply email address.
+
+## Third-Party Components
+
+VB-CABLE is provided by VB-Audio as donationware. Please consider supporting the vendor through a donation or license purchase.
+
+- [Official VB-CABLE website](https://vb-audio.com/Cable/)
+- [Distribution and licensing terms](https://vb-audio.com/Services/licensing.htm)
+
+`VBCABLE_Driver_Pack45.zip` is the complete, unmodified official driver package, including its original README and license. Distribution for professional use must comply with the vendor's additional licensing requirements. VB-CABLE A+B and C+D are not included. Third-party components retain their respective copyrights and licenses.
