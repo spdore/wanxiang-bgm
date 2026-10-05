@@ -1,0 +1,15 @@
+/bgm/
+/VBCABLE_Driver_Pack45/
+/.codex/
+/.agents/
+/.env*
+/packaging/.build/
+/分享安装包/
+*.log
+*.pdb
+settings.xml
+*.mp3
+*.wav
+*.png
+/BgmHotkey*.exe
+/BgmHotkey*.exe.config
