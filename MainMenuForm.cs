@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -18,7 +18,6 @@ namespace BgmHotkey
         private readonly TrackBar _cableVolume;
         private readonly Label _headphoneValue;
         private readonly Label _cableValue;
-        private readonly Dictionary<string, TextBox> _keyBoxes = new Dictionary<string, TextBox>();
         private bool _initializing;
         private volatile bool _capturingKey;
         private readonly ProgressBar _microphoneMeter;
@@ -27,90 +26,36 @@ namespace BgmHotkey
         private readonly Label _routeResult;
         private readonly Button _routeCheck;
         private readonly Timer _meterTimer;
-        private readonly TableLayoutPanel _bindingGrid;
 
         private void RebuildBindings()
         {
-            _bindingGrid.SuspendLayout();
-            while (_bindingGrid.Controls.Count > 0) _bindingGrid.Controls[0].Dispose();
-            _bindingGrid.RowStyles.Clear();
-            _keyBoxes.Clear();
-            _playButtons.Clear();
             _capturingKey = false;
-            _bindingGrid.RowCount = TrackCatalog.All.Length + 1;
-            _bindingGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiPixels(24)));
-            AddBindingHeader(_bindingGrid);
-            _songCount.Text = TrackCatalog.All.Length + " 首歌曲";
-            for (int i = 0; i < TrackCatalog.All.Length; i++)
-            {
-                TrackDefinition track = TrackCatalog.All[i];
-                _bindingGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiPixels(80)));
-                TableLayoutPanel song = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Padding = UiPadding(12, 12, 8, 12), Margin = new Padding(0), BackColor = i % 2 == 0 ? UiTheme.Background : Color.White };
-                song.RowStyles.Add(new RowStyle(SizeType.Percent, 55)); song.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
-                song.Controls.Add(UiTheme.Label(track.Name, 10, true), 0, 0);
-                Label file = UiTheme.Label(track.FileName, 8, false); file.ForeColor = UiTheme.Muted;
-                song.Controls.Add(file, 0, 1);
-                _bindingGrid.Controls.Add(song, 0, i + 1);
-
-                TextBox key = new TextBox();
-                key.ReadOnly = true;
-                key.TextAlign = HorizontalAlignment.Center;
-                key.Dock = DockStyle.Fill;
-                key.Margin = UiPadding(8, 26, 8, 26);
-                key.BackColor = UiTheme.Tint;
-                key.ForeColor = UiTheme.Accent;
-                key.Font = new Font("Segoe UI", 10, FontStyle.Bold);
-                key.BorderStyle = BorderStyle.FixedSingle;
-                key.Cursor = Cursors.Hand;
-                key.Text = FormatKey(_settings.GetKey(track.Id));
-                key.Tag = track.Id;
-                key.PreviewKeyDown += KeyBoxPreviewKeyDown;
-                key.KeyDown += KeyBoxKeyDown;
-                key.GotFocus += delegate { _capturingKey = true; key.BackColor = Color.FromArgb(233, 241, 255); };
-                key.LostFocus += delegate { _capturingKey = false; key.BackColor = UiTheme.Tint; };
-                _bindingGrid.Controls.Add(key, 1, i + 1);
-                _keyBoxes[track.Id] = key;
-                Button play = UiTheme.Button("播放", false); play.Dock = DockStyle.Fill; play.Margin = UiPadding(5, 20, 5, 20);
-                play.Click += delegate { _engine.ToggleTrack(track); };
-                _playButtons[track.Id] = play;
-                _bindingGrid.Controls.Add(play, 2, i + 1);
-                Button deleteSong = UiTheme.Button("删除", false); deleteSong.Dock = DockStyle.Fill; deleteSong.Margin = UiPadding(5, 20, 4, 20);
-                deleteSong.FlatAppearance.BorderSize = 0; deleteSong.ForeColor = Color.FromArgb(165, 76, 73);
-                deleteSong.FlatAppearance.MouseOverBackColor = Color.FromArgb(255, 239, 238);
-                deleteSong.Click += delegate { DeleteSong(track); };
-                _bindingGrid.Controls.Add(deleteSong, 3, i + 1);
-            }
-            if (TrackCatalog.All.Length == 0)
-            {
-                _bindingGrid.RowCount = 2;
-                _bindingGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiPixels(120)));
-                Label empty = UiTheme.Label("曲库还是空的\n点击“添加歌曲”，选一首喜欢的 MP3。", 10, false);
-                empty.ForeColor = UiTheme.Muted; empty.TextAlign = ContentAlignment.MiddleCenter;
-                _bindingGrid.Controls.Add(empty, 0, 1); _bindingGrid.SetColumnSpan(empty, 4);
-            }
-            _bindingGrid.ResumeLayout(true);
-            if (_status != null) RefreshStatus();
+            RefreshStatus();
         }
 
         private void AddSongs(object sender, EventArgs e)
         {
             using (OpenFileDialog picker = new OpenFileDialog { Title = "添加 MP3 歌曲", Filter = "MP3 音频文件 (*.mp3)|*.mp3", Multiselect = true, CheckFileExists = true })
             {
-                if (picker.ShowDialog(this) != DialogResult.OK) return;
+                DialogResult picked;
+                _capturingKey = true;
+                try { picked = picker.ShowDialog(this); }
+                finally { _capturingKey = false; }
+                if (picked != DialogResult.OK) return;
+                string[] previousRandomFiles = _settings.RandomFileNames;
                 SavedTrack[] previousTracks = _settings.Tracks;
                 TrackBinding[] previousBindings = _settings.Bindings;
-                SavedTrack last = null;
                 try
                 {
-                    foreach (string path in picker.FileNames) last = SongLibrary.Add(_settings, path);
+                    foreach (string path in picker.FileNames) SongLibrary.Add(_settings, path);
                     string error;
                     if (!SettingsStore.TrySave(_settings, out error)) throw new InvalidOperationException("保存歌曲列表失败：" + error);
                     RebuildBindings();
                     ShowLibraryNotice("歌曲已添加，点击按键栏即可绑定快捷键。", false);
-                    if (last != null && _keyBoxes.ContainsKey(last.Id)) _keyBoxes[last.Id].Focus();
                 }
                 catch (Exception ex)
                 {
+                    _settings.RandomFileNames = previousRandomFiles;
                     _settings.Tracks = previousTracks;
                     _settings.Bindings = previousBindings;
                     _settings.Normalize();
@@ -121,12 +66,14 @@ namespace BgmHotkey
 
         private void DeleteSong(TrackDefinition track)
         {
+            string[] previousRandomFiles = _settings.RandomFileNames;
             SavedTrack[] previousTracks = _settings.Tracks;
             TrackBinding[] previousBindings = _settings.Bindings;
             SongLibrary.Remove(_settings, track.Id);
             string error;
             if (!SettingsStore.TrySave(_settings, out error))
             {
+                _settings.RandomFileNames = previousRandomFiles;
                 _settings.Tracks = previousTracks;
                 _settings.Bindings = previousBindings;
                 _settings.Normalize();
@@ -141,6 +88,7 @@ namespace BgmHotkey
         private void ShowLibraryNotice(string message, bool error)
         {
             _libraryNotice.Text = message;
+            NotifyWeb(message);
             _libraryNotice.ForeColor = error ? Color.FromArgb(170, 50, 35) : UiTheme.Muted;
         }
 
@@ -185,6 +133,13 @@ namespace BgmHotkey
             });
         }
 
+        public void QueueHotkey(string keyName)
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            try { BeginInvoke(new MethodInvoker(delegate { if (!IsDisposed && !_capturingKey) PlayHotkey(keyName); })); }
+            catch (InvalidOperationException) { }
+        }
+
         public void PlayHotkey(string keyName)
         {
             if (InvokeRequired)
@@ -194,6 +149,11 @@ namespace BgmHotkey
                 return;
             }
 
+            if (!String.IsNullOrWhiteSpace(_settings.RandomKey) && String.Equals(_settings.RandomKey, keyName, StringComparison.OrdinalIgnoreCase))
+            {
+                PlayRandom();
+                return;
+            }
             foreach (TrackDefinition track in TrackCatalog.All)
             {
                 if (String.Equals(_settings.GetKey(track.Id), keyName, StringComparison.OrdinalIgnoreCase))
@@ -258,7 +218,7 @@ namespace BgmHotkey
 
         private static void AddBindingHeader(TableLayoutPanel panel)
         {
-            panel.Controls.Add(new Label { Text = "歌曲 / 文件", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.Muted, Padding = new Padding(10, 0, 0, 0) }, 0, 0);
+            panel.Controls.Add(new Label { Text = "歌曲", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.Muted, Padding = new Padding(10, 0, 0, 0) }, 0, 0);
             panel.Controls.Add(new Label { Text = "快捷键", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.Muted }, 1, 0);
         }
 
@@ -323,7 +283,8 @@ namespace BgmHotkey
             _headphoneValue.Text = FormatMappedVolume(_headphoneVolume.Value);
             _cableValue.Text = FormatMappedVolume(_cableVolume.Value);
             _engine.SetVolumes(_settings.HeadphoneVolume, _settings.CableVolume);
-            SettingsStore.Save(_settings);
+            string volumeError;
+            if (!SettingsStore.TrySave(_settings, out volumeError)) ShowLibraryNotice("音量保存失败：" + volumeError, true);
         }
 
         private void DeviceChanged(object sender, EventArgs e)
@@ -338,53 +299,9 @@ namespace BgmHotkey
                 _settings.CableDeviceName = cable.Name.IndexOf("CABLE", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     cable.Name.IndexOf("VB-Audio", StringComparison.OrdinalIgnoreCase) >= 0 ? cable.Name : "";
             }
-            SettingsStore.Save(_settings);
+            string deviceError;
+            if (!SettingsStore.TrySave(_settings, out deviceError)) ShowLibraryNotice("设备设置保存失败：" + deviceError, true);
             _engine.ReconfigureDevices();
-            RefreshStatus();
-        }
-
-        private void KeyBoxPreviewKeyDown(object sender, PreviewKeyDownEventArgs e)
-        {
-            e.IsInputKey = true;
-        }
-
-        private void KeyBoxKeyDown(object sender, KeyEventArgs e)
-        {
-            TextBox box = sender as TextBox;
-            if (box == null || box.Tag == null)
-                return;
-            Keys key = e.KeyCode;
-            e.SuppressKeyPress = true;
-            e.Handled = true;
-            string keyName = KeyName(key);
-            if (key == Keys.Escape || key == Keys.Back || key == Keys.Delete ||
-                key == Keys.ShiftKey || key == Keys.ControlKey || key == Keys.Menu)
-            {
-                ShowLibraryNotice("请按一个字母、数字或功能键。", true);
-                return;
-            }
-
-            string trackId = (string)box.Tag;
-            foreach (TrackDefinition track in TrackCatalog.All)
-            {
-                if (track.Id != trackId && String.Equals(_settings.GetKey(track.Id), keyName, StringComparison.OrdinalIgnoreCase))
-                {
-                    ShowLibraryNotice("这个按键已绑定给“" + track.Name + "”。", true);
-                    return;
-                }
-            }
-
-            string previousKey = _settings.GetKey(trackId);
-            _settings.SetKey(trackId, keyName);
-            string saveError;
-            if (!SettingsStore.TrySave(_settings, out saveError))
-            {
-                _settings.SetKey(trackId, previousKey);
-                ShowLibraryNotice("快捷键保存失败：" + saveError, true);
-                return;
-            }
-            box.Text = FormatKey(keyName);
-            ShowLibraryNotice("快捷键已保存。点击其他区域后即可使用。", false);
             RefreshStatus();
         }
 
@@ -407,7 +324,7 @@ namespace BgmHotkey
         private static string FormatMappedVolume(int sliderValue)
         {
             int outputPercent = (int)Math.Round(sliderValue * 0.30);
-            return sliderValue + "% → " + outputPercent + "%";
+            return sliderValue + "%";
         }
 
         public void SetHotkeyError(string message)
@@ -436,15 +353,8 @@ namespace BgmHotkey
                 _status.Text = String.IsNullOrWhiteSpace(_hotkeyError)
                     ? _engine.StatusText
                     : _hotkeyError + Environment.NewLine + _engine.StatusText;
-                _playbackBadge.Text = "●  " + (String.IsNullOrWhiteSpace(_hotkeyError) ? _engine.PlaybackSummary : "快捷键不可用");
-                _playbackBadge.ForeColor = String.IsNullOrWhiteSpace(_hotkeyError) ? UiTheme.Accent : Color.FromArgb(170, 50, 35);
-                foreach (KeyValuePair<string, Button> pair in _playButtons)
-                {
-                    bool playing = _engine.IsTrackPlaying(pair.Key);
-                    pair.Value.Text = playing ? "停止" : "播放";
-                    pair.Value.BackColor = playing ? UiTheme.Tint : Color.White;
-                    pair.Value.ForeColor = playing ? UiTheme.Accent : UiTheme.Text;
-                }
+                PublishWebState();
+
             }
         }
 
@@ -462,7 +372,14 @@ namespace BgmHotkey
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && _meterTimer != null) _meterTimer.Dispose();
+            if (disposing)
+            {
+                _engine.StatusChanged -= EngineStatusChanged;
+                if (_meterTimer != null) _meterTimer.Dispose();
+                if (_stateAdapters != null) _stateAdapters.Dispose();
+                if (_startupTimeout != null) _startupTimeout.Dispose();
+                if (_web != null) _web.Dispose();
+            }
             base.Dispose(disposing);
         }
 
@@ -479,3 +396,4 @@ namespace BgmHotkey
         }
     }
 }
+

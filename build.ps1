@@ -32,6 +32,7 @@ $arguments = @(
     "/target:winexe",
     "/platform:anycpu",
     "/optimize+",
+    "/define:PUBLIC_RELEASE",
     "/win32manifest:$(Join-Path $projectRoot 'app.manifest')",
     "/out:$outputPath",
     "/reference:System.dll",
@@ -43,6 +44,11 @@ $arguments = @(
 if (Test-Path -LiteralPath $iconPath) {
     $arguments += "/win32icon:$iconPath"
 }
+$webSdk = $projectRoot
+$arguments += @("/reference:$(Join-Path $webSdk 'Microsoft.Web.WebView2.Core.dll')", "/reference:$(Join-Path $webSdk 'Microsoft.Web.WebView2.WinForms.dll')", '/reference:System.Web.Extensions.dll', "/resource:$(Join-Path $projectRoot 'Interface.html'),Interface")
+
+$loaderArchitecture = if ([Environment]::Is64BitOperatingSystem) { '64' } else { '32' }
+Copy-Item -LiteralPath (Join-Path $projectRoot "WebView2Loader$loaderArchitecture.dll") -Destination (Join-Path $projectRoot 'WebView2Loader.dll') -Force
 $arguments += $sources
 
 Push-Location $projectRoot
@@ -59,3 +65,4 @@ finally {
 Write-Host "已生成：$outputPath"
 Copy-Item -LiteralPath (Join-Path $projectRoot 'app.config') -Destination ($outputPath + '.config') -Force
 Write-Host "BGM 文件目录：$(Join-Path $projectRoot 'bgm')"
+

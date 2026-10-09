@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -71,7 +71,7 @@ namespace BgmHotkey
                     bool isNewPress = _pressed.Add(key);
                     if (isNewPress && !_menu.IsCapturingKey)
                     {
-                        _menu.PlayHotkey(((Keys)key).ToString());
+                        _menu.QueueHotkey(((Keys)key).ToString());
                     }
                 }
                 else if (messageId == WmKeyUp || messageId == WmSysKeyUp)

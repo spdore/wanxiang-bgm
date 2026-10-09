@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -158,7 +158,8 @@ namespace BgmHotkey
             {
                 if (destination == null) throw new ArgumentNullException("destination");
                 if (_disposed) throw new ObjectDisposedException("StreamingReader");
-                int targetSamples = Math.Min(destination.Length, frameCount * Channels);
+                if (frameCount < 0 || frameCount > destination.Length / Channels) throw new ArgumentOutOfRangeException("frameCount");
+                int targetSamples = frameCount * Channels;
                 targetSamples -= targetSamples % Channels;
                 Array.Clear(destination, 0, destination.Length);
 

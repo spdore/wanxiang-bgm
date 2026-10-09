@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 
@@ -26,6 +26,7 @@ namespace BgmHotkey
         private int _headphoneVolume;
         private int _cableVolume;
         private bool _timerResolutionActive;
+        private bool _disposed;
         private volatile int _microphonePeak;
         private volatile int _musicPeak;
         private volatile int _outputPeak;
@@ -64,6 +65,8 @@ namespace BgmHotkey
 
         public void Start()
         {
+            if (_disposed) throw new ObjectDisposedException("AudioEngine");
+            if (_running) return;
             _timerResolutionActive = WinMm.timeBeginPeriod(1) == 0;
             ReconfigureDevices();
             _running = true;
@@ -145,6 +148,18 @@ namespace BgmHotkey
             NotifyStatus();
         }
 
+        public bool StopActiveTrack()
+        {
+            string id;
+            lock (_stateGate)
+            {
+                if (!_playing && !_loading) return false;
+                id = _playingTrackId;
+            }
+            StopTrack(id);
+            return true;
+        }
+
         public void ToggleTrack(TrackDefinition track)
         {
             if (track == null)
@@ -167,6 +182,7 @@ namespace BgmHotkey
                     _playing = false;
                     _loading = false;
                     _playingName = "";
+                    _playingTrackId = "";
                     _playbackStatus = "已停止";
                 }
                 else
@@ -260,7 +276,14 @@ namespace BgmHotkey
             while (_running)
             {
                 bool outputPaced = false;
-                ReadMusic(music);
+                try { ReadMusic(music); }
+                catch (Exception ex)
+                {
+                    Array.Clear(music, 0, music.Length);
+                    AppPaths.Log("音乐混音读取失败：" + ex);
+                    StopActiveTrack();
+                    SetDeviceError("音乐混音读取失败：" + ex.Message);
+                }
                 lock (_deviceGate)
                 {
                     if (_microphone != null)
@@ -270,6 +293,9 @@ namespace BgmHotkey
                         {
                             Array.Clear(microphone, 0, microphone.Length);
                             AppPaths.Log("读取麦克风失败：" + ex.Message);
+                            try { _microphone.Dispose(); } catch { }
+                            _microphone = null;
+                            SetDeviceError("麦克风采集已停止，请刷新设备：" + ex.Message);
                         }
                     }
                     else
@@ -360,7 +386,9 @@ namespace BgmHotkey
 
         internal static void MixCable(short[] music, short[] microphone, short[] destination, int volume)
         {
-            double gain = volume / 100.0 * MaximumMusicGain;
+            if (music == null || microphone == null || destination == null) throw new ArgumentNullException("samples");
+            if (microphone.Length != music.Length || destination.Length != music.Length) throw new ArgumentException("音频块长度必须一致。");
+            double gain = Clamp(volume, 0, 100) / 100.0 * MaximumMusicGain;
             for (int i = 0; i < music.Length; i++)
             {
                 int mixed = microphone[i] + (int)Math.Round(music[i] * gain);
@@ -414,6 +442,8 @@ namespace BgmHotkey
 
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
             _running = false;
             Mp3StreamPlayer player;
             lock (_stateGate)

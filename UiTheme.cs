@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -7,11 +7,11 @@ namespace BgmHotkey
 {
     internal static class UiTheme
     {
-        public static readonly Color Background = Color.FromArgb(242, 246, 250);
+        public static readonly Color Background = Color.FromArgb(247, 248, 250);
         public static readonly Color Text = Color.FromArgb(27, 43, 58);
         public static readonly Color Muted = Color.FromArgb(72, 88, 105);
-        public static readonly Color Accent = Color.FromArgb(8, 126, 139);
-        public static readonly Color Tint = Color.FromArgb(232, 247, 246);
+        public static readonly Color Accent = Color.FromArgb(41, 94, 219);
+        public static readonly Color Tint = Color.FromArgb(238, 243, 255);
         public static readonly Color Border = Color.FromArgb(223, 231, 239);
 
         public static Label Label(string text, float size, bool bold)
@@ -24,8 +24,8 @@ namespace BgmHotkey
             Button button = new Button { Text = text, FlatStyle = FlatStyle.Flat, BackColor = primary ? Accent : Color.White, ForeColor = primary ? Color.White : Text, Cursor = Cursors.Hand, Height = 36, Width = 116, Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold), UseCompatibleTextRendering = false, Margin = new Padding(0, 0, 8, 0), UseVisualStyleBackColor = false };
             button.FlatAppearance.BorderSize = primary ? 0 : 1;
             button.FlatAppearance.BorderColor = Border;
-            button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(6, 105, 116) : Tint;
-            button.FlatAppearance.MouseDownBackColor = primary ? Color.FromArgb(5, 88, 100) : Color.FromArgb(214, 237, 238);
+            button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(32, 78, 191) : Tint;
+            button.FlatAppearance.MouseDownBackColor = primary ? Color.FromArgb(27, 66, 160) : Color.FromArgb(226, 235, 255);
             return button;
         }
 
@@ -48,7 +48,7 @@ namespace BgmHotkey
         {
             DoubleBuffered = true;
             BackColor = Color.White;
-            Padding = new Padding(20);
+            Padding = new Padding(16);
             Dock = DockStyle.Fill;
             SetStyle(ControlStyles.ResizeRedraw, true);
         }

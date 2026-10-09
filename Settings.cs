@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Xml.Serialization;
 using System.Collections.Generic;
+using System.Windows.Forms;
 
 namespace BgmHotkey
 {
@@ -51,9 +52,15 @@ namespace BgmHotkey
         public string MicrophoneDeviceName { get; set; }
         public TrackBinding[] Bindings { get; set; }
         public SavedTrack[] Tracks { get; set; }
+        public string RandomKey { get; set; }
+        public string[] RandomTrackIds { get; set; }
+        public string[] RandomFileNames { get; set; }
 
         public AppSettings()
         {
+            RandomKey = "";
+            RandomTrackIds = new string[0];
+            RandomFileNames = new string[0];
             HeadphoneVolume = 80;
             CableVolume = 80;
             HeadphoneDeviceName = "";
@@ -125,17 +132,51 @@ namespace BgmHotkey
             foreach (SavedTrack track in Tracks)
             {
                 if (track == null || String.IsNullOrWhiteSpace(track.Id) || String.IsNullOrWhiteSpace(track.FileName) ||
-                    Path.GetFileName(track.FileName) != track.FileName || !ids.Add(track.Id)) continue;
+                    !IsAudioFileName(track.FileName) || !ids.Add(track.Id)) continue;
                 if (String.IsNullOrWhiteSpace(track.Name)) track.Name = Path.GetFileNameWithoutExtension(track.FileName);
                 if (Double.IsNaN(track.StartSeconds) || Double.IsInfinity(track.StartSeconds) || track.StartSeconds < 0) track.StartSeconds = 0;
                 valid.Add(track);
             }
             Tracks = valid.ToArray();
+            if (RandomKey == null) RandomKey = "";
+            List<string> randomFiles = new List<string>();
+            HashSet<string> seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string file in RandomFileNames ?? new string[0])
+                if (IsAudioFileName(file) && seenFiles.Add(file)) randomFiles.Add(file);
+            // Migrate the previous library-ID selection to independent file names.
+            foreach (string id in RandomTrackIds ?? new string[0])
+                foreach (SavedTrack track in Tracks)
+                    if (String.Equals(track.Id, id, StringComparison.OrdinalIgnoreCase) && seenFiles.Add(track.FileName)) randomFiles.Add(track.FileName);
+            RandomFileNames = randomFiles.ToArray();
+            RandomTrackIds = new string[0];
             List<TrackBinding> active = new List<TrackBinding>();
+            HashSet<string> boundIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (TrackBinding binding in Bindings)
-                if (binding != null && ids.Contains(binding.TrackId)) active.Add(binding);
+            {
+                if (binding == null || binding.TrackId == null || !ids.Contains(binding.TrackId) || !boundIds.Add(binding.TrackId)) continue;
+                string key = NormalizeKey(binding.Key);
+                if (key.Length > 0 && !keys.Add(key)) key = "";
+                active.Add(new TrackBinding { TrackId = binding.TrackId, Key = key });
+            }
+            RandomKey = NormalizeKey(RandomKey);
+            if (keys.Contains(RandomKey)) RandomKey = "";
             Bindings = active.ToArray();
             TrackCatalog.Configure(this);
+        }
+
+        internal static bool IsAudioFileName(string file)
+        {
+            return !String.IsNullOrWhiteSpace(file) && file.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 &&
+                Path.GetFileName(file) == file && String.Equals(Path.GetExtension(file), ".mp3", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static string NormalizeKey(string value)
+        {
+            Keys key;
+            if (String.IsNullOrWhiteSpace(value) || !Enum.TryParse<Keys>(value.Trim(), true, out key)) return "";
+            return ((key >= Keys.A && key <= Keys.Z) || (key >= Keys.D0 && key <= Keys.D9) ||
+                (key >= Keys.NumPad0 && key <= Keys.NumPad9) || (key >= Keys.F1 && key <= Keys.F24)) ? key.ToString() : "";
         }
 
         private static int Clamp(int value, int min, int max)
@@ -208,22 +249,20 @@ namespace BgmHotkey
     {
         public static AppSettings Load()
         {
-            try
+            foreach (string path in new string[] { AppPaths.SettingsFile, AppPaths.SettingsFile + ".bak" })
             {
-                if (File.Exists(AppPaths.SettingsFile))
+                try
                 {
+                    if (!File.Exists(path)) continue;
                     XmlSerializer serializer = new XmlSerializer(typeof(AppSettings));
-                    using (FileStream stream = File.OpenRead(AppPaths.SettingsFile))
+                    using (FileStream stream = File.OpenRead(path))
                     {
                         AppSettings settings = (AppSettings)serializer.Deserialize(stream);
                         settings.Normalize();
                         return settings;
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                AppPaths.Log("读取设置失败，已使用默认值：" + ex);
+                catch (Exception ex) { AppPaths.Log("读取设置失败，尝试备份：" + ex.Message); }
             }
 
             AppSettings defaults = new AppSettings();
@@ -249,7 +288,7 @@ namespace BgmHotkey
                 using (FileStream stream = File.Create(temporary))
                     serializer.Serialize(stream, settings);
                 if (File.Exists(AppPaths.SettingsFile))
-                    File.Replace(temporary, AppPaths.SettingsFile, null);
+                    File.Replace(temporary, AppPaths.SettingsFile, AppPaths.SettingsFile + ".bak");
                 else File.Move(temporary, AppPaths.SettingsFile);
                 return true;
             }

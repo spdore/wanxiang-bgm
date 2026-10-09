@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -106,7 +106,14 @@ internal static class Installer
         using (Stream source = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource))
         {
             if (source == null) throw new InvalidOperationException("安装包缺少文件：" + resource);
-            using (FileStream destination = File.Create(path)) source.CopyTo(destination);
+            string staged = path + ".new";
+            try
+            {
+                using (FileStream destination = File.Create(staged)) source.CopyTo(destination);
+                if (File.Exists(path)) File.Replace(staged, path, null);
+                else File.Move(staged, path);
+            }
+            finally { if (File.Exists(staged)) File.Delete(staged); }
         }
     }
 
@@ -120,6 +127,12 @@ internal static class Installer
         }
         Directory.CreateDirectory(Folder);
         WriteResource("Player", Path.Combine(Folder, "BgmHotkey.exe"));
+        WriteResource("IconLicense", Path.Combine(Folder, "Tabler-LICENSE.txt"));
+        WriteResource("WebLicense", Path.Combine(Folder, "WebView2-LICENSE.txt"));
+        WriteResource("WebNotice", Path.Combine(Folder, "WebView2-NOTICE.txt"));
+        WriteResource("WebCore", Path.Combine(Folder, "Microsoft.Web.WebView2.Core.dll"));
+        WriteResource("WebForms", Path.Combine(Folder, "Microsoft.Web.WebView2.WinForms.dll"));
+        WriteResource(Environment.Is64BitOperatingSystem ? "WebLoader64" : "WebLoader32", Path.Combine(Folder, "WebView2Loader.dll"));
         WriteResource("Config", Path.Combine(Folder, "BgmHotkey.exe.config"));
         WriteResource("Guide", Path.Combine(Folder, "使用说明.txt"));
         File.Copy(Application.ExecutablePath, Path.Combine(Folder, "Uninstall.exe"), true);
@@ -132,7 +145,7 @@ internal static class Installer
         using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath))
         {
             key.SetValue("DisplayName", "万象 BGM 播放器");
-            key.SetValue("DisplayVersion", "1.1.0");
+            key.SetValue("DisplayVersion", "1.5.2");
             key.SetValue("InstallLocation", Folder);
             key.SetValue("DisplayIcon", Path.Combine(Folder, "BgmHotkey.exe"));
             key.SetValue("UninstallString", "\"" + Path.Combine(Folder, "Uninstall.exe") + "\" /uninstall");
@@ -186,7 +199,7 @@ internal static class Installer
     internal static void RemoveFiles()
     {
         CheckNotRunning();
-        foreach (string file in new string[] { "BgmHotkey.exe", "BgmHotkey.exe.config", "使用说明.txt", "Uninstall.exe", "Uninstall.exe.config" })
+        foreach (string file in new string[] { "Tabler-LICENSE.txt", "WebView2-LICENSE.txt", "WebView2-NOTICE.txt", "Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.WinForms.dll", "WebView2Loader.dll", "BgmHotkey.exe", "BgmHotkey.exe.config", "使用说明.txt", "Uninstall.exe", "Uninstall.exe.config" })
             File.Delete(Path.Combine(Folder, file));
         foreach (string file in new string[] { "万象 BGM 播放器.lnk", "卸载万象 BGM 播放器.lnk" }) File.Delete(Path.Combine(MenuFolder, file));
         File.Delete(Path.Combine(DesktopFolder, "万象 BGM 播放器.lnk"));
@@ -247,8 +260,8 @@ internal sealed class SetupForm : Form
     {
         if (_install.Text == "启动播放器")
         {
-            Process.Start(Path.Combine(Installer.Folder, "BgmHotkey.exe"));
-            Close();
+            try { Process.Start(Path.Combine(Installer.Folder, "BgmHotkey.exe")); Close(); }
+            catch (Exception ex) { _result.Text = "启动失败：" + ex.Message; }
             return;
         }
         try

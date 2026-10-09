@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -156,11 +156,14 @@ namespace BgmHotkey
 
         public PcmSampleQueue(int channels)
         {
+            if (channels != 1 && channels != 2) throw new ArgumentOutOfRangeException("channels");
             _channels = channels;
         }
 
         public void Enqueue(short[] samples)
         {
+            if (samples == null) throw new ArgumentNullException("samples");
+            if (samples.Length % _channels != 0) throw new ArgumentException("PCM samples must contain complete frames.");
             lock (_gate)
             {
                 _chunks.Enqueue(samples);
@@ -176,6 +179,8 @@ namespace BgmHotkey
 
         public void ReadStereo(short[] destination, int frames)
         {
+            if (destination == null) throw new ArgumentNullException("destination");
+            if (frames < 0 || frames > destination.Length / 2) throw new ArgumentOutOfRangeException("frames");
             Array.Clear(destination, 0, frames * 2);
             lock (_gate)
             {
@@ -279,8 +284,11 @@ namespace BgmHotkey
             }
         }
 
+        private volatile Exception _captureError;
+
         public void ReadStereo(short[] destination, int frames)
         {
+            if (_captureError != null) throw new InvalidOperationException("麦克风采集停止，请刷新设备。", _captureError);
             _queue.ReadStereo(destination, frames);
         }
 
@@ -324,7 +332,11 @@ namespace BgmHotkey
                     Marshal.StructureToPtr(header, headerPointer, false);
                     uint result = WinMm.waveInAddBuffer(_handle, headerPointer, (uint)_headerSize);
                     if (result != 0)
-                        AppPaths.Log("重新提交麦克风缓冲区失败：" + result);
+                        {
+                            _captureError = WinMm.Error("重新提交麦克风缓冲区", result, true);
+                            _running = false;
+                            AppPaths.Log(_captureError.Message);
+                        }
                 }
             }
         }
