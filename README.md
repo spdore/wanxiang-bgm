@@ -1,67 +1,100 @@
 <div align="center">
-  <img src="brand.svg" width="72" alt="Wanxiang BGM">
+  <img src="brand.svg" width="72" alt="Wanxiang BGM Player">
   <h1>Wanxiang BGM Player</h1>
-  <p>Play your music. Share it with your team.</p>
-  <p><a href="https://github.com/spdore/wanxiang-bgm/raw/refs/heads/main/WanxiangBgmSetup.exe">Download Windows Installer</a> · <a href="#quick-start">Quick Start</a> · <a href="#voice-routing">Voice Setup</a></p>
+  <p>A simple soundboard for your voice chat.</p>
+  <p><a href="https://github.com/spdore/wanxiang-bgm/raw/refs/heads/main/WanxiangBgmSetup.exe">Download for Windows</a></p>
 </div>
 
-A Windows MP3 soundboard with global shortcuts, random playback, and separate music volume controls for your headphones and voice chat. **Version 1.5.2. The shared installer starts with no songs or shortcut bindings.** The interface is currently in Chinese.
+Play local MP3 files with global keyboard shortcuts and share your music with teammates through VB-CABLE. Adjust the music in your headphones and voice chat independently.
+
+**Current version: 1.5.2.** The installer includes no songs or preset shortcuts. The application interface is currently available in Chinese; the control names below are English descriptions.
 
 ## Features
 
-- Import your own MP3s, search your library, assign shortcuts, and remove entries without deleting audio files.
-- Play one song at a time. Press any bound song key while playing to stop.
-- Choose random candidates from all MP3s in the `bgm` folder, including songs without individual shortcuts.
-- Mix your selected physical microphone with this app's music through VB-CABLE.
-- Adjust headphone music and voice-channel music independently.
-- Light theme with an optional dark theme, integrated window controls, and startup focus handling.
+- Import and search your own MP3 files.
+- Assign a global shortcut to each song.
+- Select songs from the music folder for random playback, even without individual shortcuts.
+- Mix your physical microphone with music from this application.
+- Control headphone music and voice-chat music volume separately.
+- Switch between light and dark themes.
+- Close the window to stop the application.
 
 ## Installation
 
-1. Download and run [WanxiangBgmSetup.exe](https://github.com/spdore/wanxiang-bgm/raw/refs/heads/main/WanxiangBgmSetup.exe).
-2. If VB-CABLE is missing, choose the bundled official driver installer. Follow its instructions and restart Windows if prompted. Driver installation requires administrator permission.
-3. Launch the player from the desktop or Start menu.
+1. Download [the Windows installer](https://github.com/spdore/wanxiang-bgm/raw/refs/heads/main/WanxiangBgmSetup.exe).
+2. Run the installer. If VB-CABLE is missing, select the option to install the bundled official driver.
+3. Follow the driver installer instructions and restart Windows if requested.
+4. Open the player using its desktop or Start menu shortcut.
 
-**Requirements:** Windows 10/11, .NET Framework 4.8, and [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). The installer includes WebView2 SDK files but does not bundle the full runtime. VB-CABLE is required for sharing music through voice chat. The installer is unsigned.
+You need Windows 10 or 11, .NET Framework 4.8, and [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). The full WebView2 Runtime is not bundled. VB-CABLE driver installation requires administrator permission. The application installer is unsigned.
 
-## Quick Start
+## Playing Music
 
-1. Click **添加歌曲** (Add Songs) and select an MP3.
-2. Click its key field to bind a letter, number, or F1–F24. Press Esc to cancel binding.
-3. Click **播放** (Play) or press its shortcut. While playing, another bound song key stops playback.
-4. Open **随机播放** (Random Playback), refresh the folder list, select candidates, and assign a separate shortcut. The random key stops current playback before a subsequent press picks a song.
-5. Close the window to exit the application.
+1. Use the add-song button in the upper-right corner to import an MP3.
+2. Select the song's shortcut field and press a letter, number, or F1 through F24. Press Esc to cancel.
+3. Click the song's play button or press its assigned shortcut.
+4. While music is playing, press any bound song shortcut to stop it.
 
-Settings save automatically. Headphone output follows the Windows default playback device. Both sliders display 0–100%, mapped to an actual music gain of 0–30%. Voice-channel music volume does not change microphone volume. These values are digital gain settings, not a calibrated sound-pressure measurement.
+Only one song can play at a time. Removing a library entry keeps its audio file. Settings save automatically.
 
-## Voice Routing
+### Random Playback
+
+Open the random-playback tab, refresh the music-folder list, and select the songs you want to include. Assign an unused shortcut to random playback.
+
+Candidates can include any MP3 in the application's music folder; they do not need individual library entries or shortcuts. If music is already playing, the random shortcut stops it. Press the shortcut again to choose a random song.
+
+### Volume Controls
+
+The two sliders independently control music in your headphones and music sent to voice chat. Each displayed range of 0 to 100 percent maps to an actual music gain of 0 to 30 percent. Changing voice-chat music volume does not change microphone volume.
+
+Headphone playback uses the Windows default output device. These percentages describe digital gain, not calibrated sound pressure.
+
+## Connecting Voice Chat
 
 ```text
-Selected physical microphone ─┐
-                             ├─ CABLE Input → CABLE Output → QQ / game voice chat
-App BGM ─────────────────────┘
-        └─ Windows default headphones
+Physical microphone + App music
+                 |
+            CABLE Input
+                 |
+            CABLE Output
+                 |
+         QQ or game voice chat
 ```
 
-In **语音设置** (Voice Settings), select your physical microphone and **CABLE Input** as the sending device. In QQ or your game, select **CABLE Output** as its microphone. Only the selected microphone and this app's BGM are mixed; other computer audio is not captured.
+1. Open the voice-settings tab in the player.
+2. Select your physical microphone.
+3. Select **CABLE Input** as the sending device.
+4. In QQ or your game, select **CABLE Output** as the microphone.
 
-If teammates cannot hear music, refresh devices, check both endpoint selections, raise the voice-channel music slider, and run **检查声音通道** (Check Audio Channel) while a song plays. Check the chat app's input meter and noise suppression settings. A missing saved microphone must be selected again.
+The virtual channel receives your selected microphone and this application's music. Other computer audio is not captured. Music also plays through your default headphones.
 
-## Data and Privacy
+### If Teammates Cannot Hear Music
 
-The distribution stores settings and imported songs locally in `%LOCALAPPDATA%\BgmHotkeyShare`, with MP3s under `bgm`. No developer songs, device configurations, recordings, logs, personal screenshots, credentials, or personal workstation paths are included. Uninstalling preserves user songs/settings and does not uninstall the shared VB-CABLE driver.
+- Refresh devices and confirm both cable endpoint selections.
+- Raise the voice-chat music slider.
+- Play a song and use the audio-channel check in the voice-settings tab.
+- Check the chat application's input meter and noise suppression settings.
+- Reselect your physical microphone if the saved device is unavailable.
 
-## Build from Source
+## Local Data
 
-Run PowerShell in the repository root on Windows:
+The distribution stores settings in `%LOCALAPPDATA%\BgmHotkeyShare` and imported songs in its `bgm` subfolder. No personal songs, device settings, recordings, logs, screenshots, credentials, or developer workstation paths are included in the download.
+
+Uninstalling the player preserves user songs and settings. It does not uninstall the shared VB-CABLE driver.
+
+## Building from Source
+
+Run these commands in PowerShell from the repository root on Windows:
 
 ```powershell
 .\build.ps1
 .\build-share.ps1
 ```
 
-The first command builds the empty-library player and copies its WebView2 dependencies. The second builds `分享安装包\万象BGM_安装.exe`. Keep the EXE, its `.config`, WebView2 assemblies, and loader together when running a source build.
+The first command builds the empty-library player and prepares its WebView2 dependencies. The second creates the distribution installer; its output location is printed when the build completes.
 
-The app uses C# 5 / .NET Framework 4.8, a Windows Forms window, and embedded offline HTML/CSS/SVG in WebView2. Native MP3 playback supplies headphone audio; Media Foundation and WinMM handle the music/microphone mix for the virtual channel. No Node.js server is required at runtime.
+Keep the player EXE, its configuration file, the WebView2 assemblies, and the loader together when running a source build.
 
-VB-CABLE is donationware from [VB-Audio](https://vb-audio.com/Cable/). The bundled standard driver ZIP is unmodified; its original terms apply. WebView2 and Tabler notices are included with their components.
+The application uses C# 5, .NET Framework 4.8, Windows Forms, and an embedded offline HTML/CSS/SVG interface hosted in WebView2. Native MP3 playback provides headphone audio. Media Foundation and WinMM provide the music and microphone mix for the virtual channel. No Node.js server is needed at runtime.
+
+VB-CABLE is donationware from [VB-Audio](https://vb-audio.com/Cable/). The bundled standard driver package is unmodified and retains the vendor's terms. WebView2 and Tabler notices accompany their components.
