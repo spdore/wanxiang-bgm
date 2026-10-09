@@ -7,7 +7,7 @@
 
 Play local MP3 files with global keyboard shortcuts and share your music with teammates through VB-CABLE. Adjust the music in your headphones and voice chat independently.
 
-**Current version: 1.5.2.** The installer includes no songs or preset shortcuts. The application interface is currently available in Chinese; the control names below are English descriptions.
+**Current version: 1.6.0.** The installer includes no songs or preset shortcuts. The application interface is currently available in Chinese; the control names below are English descriptions.
 
 ## Features
 
@@ -16,15 +16,16 @@ Play local MP3 files with global keyboard shortcuts and share your music with te
 - Select songs from the music folder for random playback, even without individual shortcuts.
 - Mix your physical microphone with music from this application.
 - Control headphone music and voice-chat music volume separately.
-- Switch between light and dark themes.
+- Switch between light and dark themes, with a matching berry-colored application icon.
 - Close the window to stop the application.
 
 ## Installation
 
 1. Download [the Windows installer](https://github.com/spdore/wanxiang-bgm/raw/refs/heads/main/WanxiangBgmSetup.exe).
-2. Run the installer. If VB-CABLE is missing, select the option to install the bundled official driver.
-3. Follow the driver installer instructions and restart Windows if requested.
-4. Open the player using its desktop or Start menu shortcut.
+2. Use the folder-selection button to browse for an installation location. The destination is displayed automatically; no path typing is required.
+3. If VB-CABLE is missing, select the option to install the bundled official driver.
+4. Follow the driver installer instructions and restart Windows if requested.
+5. Open the player using its desktop or Start menu shortcut.
 
 You need Windows 10 or 11, .NET Framework 4.8, and [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). The full WebView2 Runtime is not bundled. VB-CABLE driver installation requires administrator permission. The application installer is unsigned.
 

@@ -14,7 +14,24 @@ using Microsoft.Win32;
 
 internal static class Installer
 {
-    internal static readonly string Folder = Path.Combine(UserDirectory(Environment.SpecialFolder.LocalApplicationData, "LOCALAPPDATA", ""), "Programs", "WanxiangBgm");
+    internal static string Folder = GetInstallFolder();
+    private static string GetInstallFolder()
+    {
+        using(RegistryKey key=Registry.CurrentUser.OpenSubKey(RegistryPath)) {
+            string saved=key==null?null:key.GetValue("InstallLocation") as string;
+            if(!String.IsNullOrWhiteSpace(saved)&&Path.IsPathRooted(saved)) {
+                string full=Path.GetFullPath(saved);
+                if(full.TrimEnd(Path.DirectorySeparatorChar)!=Path.GetPathRoot(full).TrimEnd(Path.DirectorySeparatorChar))return full;
+            }
+        }
+        return Path.Combine(UserDirectory(Environment.SpecialFolder.LocalApplicationData,"LOCALAPPDATA",""),"Programs","WanxiangBgm");
+    }
+    internal static string DestinationFor(string selected)
+    {
+        if(String.IsNullOrWhiteSpace(selected)||!Path.IsPathRooted(selected))throw new ArgumentException("请选择有效的文件夹。");
+        string full=Path.GetFullPath(selected).TrimEnd(Path.DirectorySeparatorChar);
+        return String.Equals(Path.GetFileName(full),"WanxiangBgm",StringComparison.OrdinalIgnoreCase)?full:Path.Combine(full+Path.DirectorySeparatorChar,"WanxiangBgm");
+    }
     private const string RegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\WanxiangBgm";
     private static readonly string MenuFolder = Path.Combine(UserDirectory(Environment.SpecialFolder.Programs, "APPDATA", @"Microsoft\Windows\Start Menu\Programs"), "万象 BGM 播放器");
     private static readonly string DesktopFolder = UserDirectory(Environment.SpecialFolder.DesktopDirectory, "USERPROFILE", "Desktop");
@@ -83,7 +100,11 @@ internal static class Installer
             Uninstall();
             return;
         }
-        Application.Run(new SetupForm());
+        var form=new SetupForm();
+        if(Array.IndexOf(args,"--capture-ui")>=0){
+            var capture=new System.Windows.Forms.Timer{Interval=1200};capture.Tick+=delegate{capture.Stop();using(var bitmap=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(bitmap,new Rectangle(Point.Empty,form.Size));bitmap.Save(Path.Combine(Path.GetDirectoryName(Application.ExecutablePath),"setup-preview.png"));}capture.Dispose();};form.Shown+=delegate{capture.Start();};
+        }
+        Application.Run(form);
     }
 
     internal static void CheckNotRunning()
@@ -145,7 +166,7 @@ internal static class Installer
         using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath))
         {
             key.SetValue("DisplayName", "万象 BGM 播放器");
-            key.SetValue("DisplayVersion", "1.5.2");
+            key.SetValue("DisplayVersion", "1.6.0");
             key.SetValue("InstallLocation", Folder);
             key.SetValue("DisplayIcon", Path.Combine(Folder, "BgmHotkey.exe"));
             key.SetValue("UninstallString", "\"" + Path.Combine(Folder, "Uninstall.exe") + "\" /uninstall");
@@ -214,6 +235,8 @@ internal sealed class SetupForm : Form
 {
     private readonly Button _install;
     private readonly Label _result;
+    private readonly Label _destination;
+    private readonly Button _browse;
     private readonly CheckBox _desktop;
     private readonly CheckBox _driver;
     internal SetupForm()
@@ -224,9 +247,10 @@ internal sealed class SetupForm : Form
         Font = new Font("Microsoft YaHei UI", 10F);
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoScaleDimensions = new SizeF(96F, 96F);
-        ClientSize = new Size(720, 580);
-        MinimumSize = new Size(660, 580);
-        BackColor = Color.FromArgb(242, 246, 250);
+        ClientSize = new Size(720, 610);
+        MinimumSize = new Size(660, 610);
+        BackColor = Color.FromArgb(247,248,252);
+        ForeColor=Color.FromArgb(40,48,70);
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
         TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8, Padding = new Padding(28), Margin = new Padding(0) };
         for (int i = 0; i < 8; i++) layout.RowStyles.Add(new RowStyle(i == 6 ? SizeType.Percent : SizeType.AutoSize, i == 6 ? 100 : 0));
@@ -234,16 +258,32 @@ internal sealed class SetupForm : Form
         layout.Controls.Add(new Label { Text = "万象 / BGM", AutoSize = true, Font = new Font(Font.FontFamily, 23F, FontStyle.Bold), Margin = new Padding(0, 0, 0, 18) }, 0, 0);
         layout.Controls.Add(new Label { Text = "Windows 分享版 · 默认空曲库\n导入自己的 MP3，绑定快捷键，即可播放。", AutoSize = true, Margin = new Padding(0, 0, 0, 18) }, 0, 1);
         layout.Controls.Add(new Label { Text = "内含 VB-CABLE 官方驱动，安装驱动需管理员授权和重启。\nVB-CABLE 由 VB-Audio 提供，采用 donationware 模式。\n官网：https://vb-audio.com/Cable/；欢迎捐赠或购买许可。", AutoSize = true, Margin = new Padding(0, 0, 0, 14) }, 0, 2);
-        layout.Controls.Add(new TextBox { Text = Installer.Folder, ReadOnly = true, TabStop = false, Dock = DockStyle.Top, Margin = new Padding(0, 0, 0, 14) }, 0, 3);
+        var location=new TableLayoutPanel{AutoSize=true,Dock=DockStyle.Top,ColumnCount=2,RowCount=2,Margin=new Padding(0,4,0,20)};
+        location.RowStyles.Add(new RowStyle(SizeType.AutoSize));location.RowStyles.Add(new RowStyle(SizeType.Absolute,44));
+        location.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));location.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var locationTitle=new Label{Text="安装位置",AutoSize=true,Margin=new Padding(0,0,0,8)};location.Controls.Add(locationTitle,0,0);location.SetColumnSpan(locationTitle,2);
+        _destination=new Label{Text=Installer.Folder,AutoEllipsis=true,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,BackColor=Color.White,Padding=new Padding(12,0,12,0),Margin=new Padding(0,0,12,0),MinimumSize=new Size(0,44),AccessibleName="安装位置"};
+        var pathTip=new ToolTip();pathTip.SetToolTip(_destination,Installer.Folder);
+        _browse=new Button{Text="选择文件夹…",AutoSize=true,MinimumSize=new Size(125,44),FlatStyle=FlatStyle.Flat,BackColor=Color.White,Margin=new Padding(0),AccessibleName="选择安装文件夹"};
+        _browse.FlatAppearance.BorderColor=Color.FromArgb(128,139,161);
+        _browse.Click+=delegate{
+            try {
+                string selected=ModernFolderPicker.Select(this,Installer.Folder);
+                if(selected==null)return;
+                Installer.Folder=Installer.DestinationFor(selected);_destination.Text=Installer.Folder;pathTip.SetToolTip(_destination,Installer.Folder);
+            }catch(Exception ex){_result.Text="无法打开文件夹选择器："+ex.Message;}
+
+        };
+        location.Controls.Add(_destination,0,1);location.Controls.Add(_browse,1,1);layout.Controls.Add(location,0,3);
         _desktop = new CheckBox { Text = "创建桌面快捷方式", Checked = true, AutoSize = true, Margin = new Padding(0, 0, 0, 12) };
         layout.Controls.Add(_desktop, 0, 4);
         bool cableExists = Installer.HasCable();
         _driver = new CheckBox { Text = cableExists ? "已检测到 VB-CABLE，保留现有驱动" : "同时安装 VB-CABLE（用于游戏语音混音）", Checked = !cableExists, Enabled = !cableExists, AutoSize = true, Margin = new Padding(0, 0, 0, 12) };
         layout.Controls.Add(_driver, 0, 5);
-        _result = new Label { Dock = DockStyle.Fill, Text = "安装不会包含任何歌曲或其他人的个人配置。", ForeColor = Color.FromArgb(72, 88, 105), Margin = new Padding(0, 12, 0, 12) };
+        _result = new Label { Dock = DockStyle.Fill, Text = "安装不会包含任何歌曲或其他人的个人配置。", ForeColor = Color.FromArgb(98,107,128), Margin = new Padding(0, 12, 0, 12) };
         layout.Controls.Add(_result, 0, 6);
         FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(0) };
-        _install = new Button { Text = "安装", AutoSize = true, Padding = new Padding(20, 8, 20, 8), BackColor = Color.FromArgb(8, 126, 139), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+        _install = new Button { Text = "安装", AutoSize = true, Padding = new Padding(20, 8, 20, 8), BackColor = Color.FromArgb(186,49,87), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
         _install.FlatAppearance.BorderSize = 0;
         _install.Click += InstallClicked;
         FormClosing += delegate(object sender, FormClosingEventArgs e) { if (!_install.Enabled) e.Cancel = true; };
@@ -266,12 +306,12 @@ internal sealed class SetupForm : Form
         }
         try
         {
-            _install.Enabled = false;
+            _install.Enabled = false; _browse.Enabled=false;
             _result.Text = "正在安装……";
             Refresh();
             Installer.Install(_desktop.Checked);
 
-            _install.Text = "启动播放器";
+            _install.Text = "启动播放器"; _browse.Enabled=false;
             _result.Text = "播放器已安装。点击“启动播放器”，添加自己的歌曲。";
             if (_driver.Checked) {
                 _result.Text = "播放器已安装，正在打开 VB-CABLE 官方安装程序……"; Refresh();
@@ -280,6 +320,38 @@ internal sealed class SetupForm : Form
             }
         }
         catch (Exception ex) { _result.Text = (_install.Text == "启动播放器" ? "播放器已安装；驱动安装未完成：" : "安装失败：") + ex.Message; }
-        finally { _install.Enabled = true; }
+        finally { _install.Enabled = true; _browse.Enabled=_install.Text!="启动播放器"; }
     }
+}
+
+internal static class ModernFolderPicker {
+ [ComImport,Guid("42F85136-DB7E-439C-85F1-E4075D135FC8"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+ private interface IFileDialog {
+  [PreserveSig]int Show(IntPtr owner);
+  void SetFileTypes(uint count,IntPtr specs);void SetFileTypeIndex(uint index);void GetFileTypeIndex(out uint index);
+  void Advise(IntPtr events,out uint cookie);void Unadvise(uint cookie);void SetOptions(uint options);void GetOptions(out uint options);
+  void SetDefaultFolder(IShellItem item);void SetFolder(IShellItem item);void GetFolder(out IShellItem item);void GetCurrentSelection(out IShellItem item);
+  void SetFileName([MarshalAs(UnmanagedType.LPWStr)]string name);void GetFileName(out IntPtr name);
+  void SetTitle([MarshalAs(UnmanagedType.LPWStr)]string title);void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)]string text);void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)]string label);
+  void GetResult(out IShellItem item);void AddPlace(IShellItem item,int alignment);void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)]string extension);
+  void Close(int result);void SetClientGuid(ref Guid guid);void ClearClientData();void SetFilter(IntPtr filter);
+ }
+ [ComImport,Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+ private interface IShellItem {
+  void BindToHandler(IntPtr context,ref Guid handler,ref Guid iid,out IntPtr result);void GetParent(out IShellItem parent);
+  void GetDisplayName(uint kind,out IntPtr name);void GetAttributes(uint mask,out uint attributes);void Compare(IShellItem item,uint hint,out int order);
+ }
+ [DllImport("shell32.dll",CharSet=CharSet.Unicode,PreserveSig=false)]static extern void SHCreateItemFromParsingName(string name,IntPtr context,ref Guid iid,out IShellItem item);
+ internal static string Select(IWin32Window owner,string current) {
+  var dialog=(IFileDialog)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")));
+  IShellItem initial=null,result=null;IntPtr name=IntPtr.Zero;
+  try {
+   uint options;dialog.GetOptions(out options);dialog.SetOptions(options|0x20|0x40|0x8|0x02000000);
+   dialog.SetTitle("选择安装位置");dialog.SetOkButtonLabel("选择此文件夹");
+   string start=current;while(!String.IsNullOrEmpty(start)&&!Directory.Exists(start))start=Path.GetDirectoryName(start);
+   if(!String.IsNullOrEmpty(start)){Guid iid=new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");SHCreateItemFromParsingName(start,IntPtr.Zero,ref iid,out initial);dialog.SetFolder(initial);}
+   int hr=dialog.Show(owner.Handle);if(hr==unchecked((int)0x800704C7))return null;Marshal.ThrowExceptionForHR(hr);
+   dialog.GetResult(out result);result.GetDisplayName(0x80058000,out name);return Marshal.PtrToStringUni(name);
+  }finally{if(name!=IntPtr.Zero)Marshal.FreeCoTaskMem(name);if(result!=null)Marshal.ReleaseComObject(result);if(initial!=null)Marshal.ReleaseComObject(initial);Marshal.ReleaseComObject(dialog);}
+ }
 }
