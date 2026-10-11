@@ -49,7 +49,7 @@ MP3 seeking decodes forward and discards sample frames to avoid incorrect variab
 ```text
 Selected physical microphone ─┐
                               ├─> CABLE Input ─> CABLE Output ─> QQ / game chat
-Application BGM ─────────────┘
+Application BGM ──────────────┘
 ```
 
 The player mixes the selected microphone and its own BGM into **CABLE Input**. In the chat application, choose **CABLE Output** as the recording device. The player does not capture other applications' audio and does not change the chat application's settings for you.
