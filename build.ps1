@@ -1,16 +1,16 @@
-param(
+﻿param(
     [string]$OutputName = "BgmHotkey.exe"
 )
 
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$sourceDirectory = $projectRoot
+$sourceDirectory = Join-Path $projectRoot "app\src"
 if ([System.IO.Path]::GetFileName($OutputName) -ne $OutputName -or [System.IO.Path]::GetExtension($OutputName) -ne ".exe") {
     throw "OutputName 只能是 exe 文件名。"
 }
 $outputPath = Join-Path $projectRoot $OutputName
-$iconPath = Join-Path $projectRoot "BgmHotkey.ico"
+$iconPath = Join-Path $projectRoot "app\assets\BgmHotkey.ico"
 $compilerCandidates = @(
     "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe",
     "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
@@ -20,7 +20,7 @@ if (-not $compiler) {
     throw "未找到 .NET Framework C# 编译器。"
 }
 
-$sources = @(Get-ChildItem -LiteralPath $sourceDirectory -Filter "*.cs" | Where-Object Name -ne 'Installer.cs' | ForEach-Object { $_.FullName })
+$sources = @(Get-ChildItem -LiteralPath $sourceDirectory -Filter "*.cs" | ForEach-Object { $_.FullName })
 if ($sources.Count -eq 0) {
     throw "src 目录中没有 C# 源文件。"
 }
@@ -32,8 +32,7 @@ $arguments = @(
     "/target:winexe",
     "/platform:anycpu",
     "/optimize+",
-    "/define:PUBLIC_RELEASE",
-    "/win32manifest:$(Join-Path $projectRoot 'app.manifest')",
+    "/win32manifest:$(Join-Path $projectRoot 'app\app.manifest')",
     "/out:$outputPath",
     "/reference:System.dll",
     "/reference:System.Core.dll",
@@ -44,11 +43,11 @@ $arguments = @(
 if (Test-Path -LiteralPath $iconPath) {
     $arguments += "/win32icon:$iconPath"
 }
-$webSdk = $projectRoot
-$arguments += @("/reference:$(Join-Path $webSdk 'Microsoft.Web.WebView2.Core.dll')", "/reference:$(Join-Path $webSdk 'Microsoft.Web.WebView2.WinForms.dll')", '/reference:System.Web.Extensions.dll', "/resource:$(Join-Path $projectRoot 'Interface.html'),Interface")
-
-$loaderArchitecture = if ([Environment]::Is64BitOperatingSystem) { '64' } else { '32' }
-Copy-Item -LiteralPath (Join-Path $projectRoot "WebView2Loader$loaderArchitecture.dll") -Destination (Join-Path $projectRoot 'WebView2Loader.dll') -Force
+$webSdk = Join-Path $projectRoot 'vendor\webview2\sdk\net462'
+$arguments += @("/reference:$(Join-Path $webSdk 'Microsoft.Web.WebView2.Core.dll')", "/reference:$(Join-Path $webSdk 'Microsoft.Web.WebView2.WinForms.dll')", '/reference:System.Web.Extensions.dll', "/resource:$(Join-Path $projectRoot 'app\ui\index.html'),Interface")
+Copy-Item -LiteralPath (Join-Path $webSdk 'Microsoft.Web.WebView2.Core.dll'),(Join-Path $webSdk 'Microsoft.Web.WebView2.WinForms.dll') -Destination $projectRoot -Force
+$loaderArchitecture = if ([Environment]::Is64BitOperatingSystem) { 'win-x64' } else { 'win-x86' }
+Copy-Item -LiteralPath (Join-Path $projectRoot "vendor\webview2\loader\$loaderArchitecture\WebView2Loader.dll") -Destination $projectRoot -Force
 $arguments += $sources
 
 Push-Location $projectRoot
@@ -63,6 +62,5 @@ finally {
 }
 
 Write-Host "已生成：$outputPath"
-Copy-Item -LiteralPath (Join-Path $projectRoot 'app.config') -Destination ($outputPath + '.config') -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot 'app\app.config') -Destination ($outputPath + '.config') -Force
 Write-Host "BGM 文件目录：$(Join-Path $projectRoot 'bgm')"
-

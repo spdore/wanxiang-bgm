@@ -1,101 +1,85 @@
 <div align="center">
-  <img src="brand.svg" width="72" alt="Wanxiang BGM Player">
+  <img src="app/assets/brand.svg" width="72" alt="Wanxiang BGM Player">
   <h1>Wanxiang BGM Player</h1>
-  <p>A simple soundboard for your voice chat.</p>
-  <p><a href="https://github.com/spdore/wanxiang-bgm/raw/refs/heads/main/WanxiangBgmSetup.exe">Download for Windows</a></p>
+  <p>A Windows soundboard for voice chat.</p>
 </div>
 
-Play local MP3 files with global keyboard shortcuts and share your music with teammates through VB-CABLE. Adjust the music in your headphones and voice chat independently.
+Wanxiang BGM Player plays local audio from global keyboard shortcuts. It mixes the selected physical microphone with this application's music and sends that mix to VB-CABLE. Headphone music and voice-chat music have independent volume controls.
 
-**Current version: 1.6.0.** The installer includes no songs or preset shortcuts. The application interface is currently available in Chinese; the control names below are English descriptions.
+**Current version: 1.8.4** · Windows 10 version 1903 or later / Windows 11 · x64 · Chinese interface · Empty library in the installer
+
+## Download and install
+
+Download the [1.8.4 Windows installer](https://github.com/spdore/wanxiang-bgm/releases/download/v1.8.4/WanxiangBgmSetup-1.8.4.exe). Run it, choose an installation folder, and continue through the setup wizard. The installer contains the official Microsoft WebView2 Evergreen offline runtime and the official VB-CABLE driver package. An existing WebView2 runtime or VB-CABLE installation is reused. Installing the driver requires Windows administrator approval and may require a restart; follow the signed driver's prompts.
+
+The package is for 64-bit Intel/AMD Windows 10 version 1903 or later, or Windows 11, and requires .NET Framework 4.8 or later. The installer starts with an empty music library. Add your own files after installation.
 
 ## Features
 
-- Import and search your own MP3 files.
-- Assign a global shortcut to each song.
-- Select songs from the music folder for random playback, even without individual shortcuts.
-- Mix your physical microphone with music from this application.
-- Control headphone music and voice-chat music volume separately.
-- Switch between light and dark themes, with a matching berry-colored application icon.
-- Close the window to stop the application.
+- Import MP3, WAV, M4A, AAC, WMA, FLAC, Ogg Vorbis, Opus, and AIFF files supported by the current Windows media decoders.
+- Assign a global shortcut to each library track. Only one BGM track can play at a time; pressing an assigned track key while music is loading or playing stops it.
+- Set a start point and optional end point for single-track shortcut playback.
+- Play the full song with the regular Play button or either random-playback entry point.
+- Seek anywhere across the full song. Seeking during anchored playback removes that session's range limit, keeps saved anchor markers visible, and leaves the saved anchors unchanged.
+- Build a random playlist from every supported audio file in the application's `bgm` folder, including tracks without individual shortcuts. Search, bulk-select visible results, and keep the selection across restarts.
+- Mix only the selected physical microphone and this application's BGM into the virtual cable. Other applications' audio is not captured.
+- Adjust headphone music and virtual-channel music independently. Removing a song from the library does not delete its source file.
 
-## Installation
+## Quick start
 
-1. Download [the Windows installer](https://github.com/spdore/wanxiang-bgm/raw/refs/heads/main/WanxiangBgmSetup.exe).
-2. Use the folder-selection button to browse for an installation location. The destination is displayed automatically; no path typing is required.
-3. If VB-CABLE is missing, select the option to install the bundled official driver.
-4. Follow the driver installer instructions and restart Windows if requested.
-5. Open the player using its desktop or Start menu shortcut.
+1. Open **My Library** and choose **Add songs**. The file picker starts in the application's `bgm` folder.
+2. Click a track's shortcut field and press a letter, number, or function key. Press Escape to cancel.
+3. Press the assigned key or the card's **Play** button. The Play button starts the full song; the global shortcut uses that track's saved shortcut range.
+4. To send music to chat, select your physical microphone and **CABLE Input** in the player. In QQ or the game, select **CABLE Output** as the microphone/recording device.
 
-You need Windows 10 or 11, .NET Framework 4.8, and [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). The full WebView2 Runtime is not bundled. VB-CABLE driver installation requires administrator permission. The application installer is unsigned.
+## Playback ranges and seeking
 
-## Playing Music
+Choose **Shortcut playback range** to save a start point and an optional end point for a track. These points apply only when that track's single-track global shortcut starts playback. With no start point, playback starts at 00:00. With no end point, it continues to the end of the song.
 
-1. Use the add-song button in the upper-right corner to import an MP3.
-2. Select the song's shortcut field and press a letter, number, or F1 through F24. Press Esc to cancel.
-3. Click the song's play button or press its assigned shortcut.
-4. While music is playing, press any bound song shortcut to stop it.
+The regular Play button and random playback always play the full track. The progress bar always spans the full song. If you drag it during shortcut-range playback, the current session continues from the chosen position to the song end, even when the position is outside the saved range. The saved anchor markers remain visible, and the next shortcut press still uses the saved range.
 
-Only one song can play at a time. Removing a library entry keeps its audio file. Settings save automatically.
+## Audio formats
 
-### Random Playback
+The file picker accepts MP3, WAV, M4A, AAC, WMA, FLAC, Ogg Vorbis, Opus, and AIFF extensions. Windows Media Foundation natively supports MP3, WAVE, AAC, and WMA on supported Windows versions. Other formats depend on compatible system codecs; the application does not bundle third-party codecs, so they are not guaranteed on a clean installation. A file can appear as an import candidate and still fail if the installed decoder cannot open it.
 
-Open the random-playback tab, refresh the music-folder list, and select the songs you want to include. Assign an unused shortcut to random playback.
+MP3 seeking decodes forward and discards sample frames to avoid incorrect variable-bitrate seek-index results. Seeking far into a long MP3 can take longer than seeking an uncompressed WAV file.
 
-Candidates can include any MP3 in the application's music folder; they do not need individual library entries or shortcuts. If music is already playing, the random shortcut stops it. Press the shortcut again to choose a random song.
-
-### Volume Controls
-
-The two sliders independently control music in your headphones and music sent to voice chat. Each displayed range of 0 to 100 percent maps to an actual music gain of 0 to 30 percent. Changing voice-chat music volume does not change microphone volume.
-
-Headphone playback uses the Windows default output device. These percentages describe digital gain, not calibrated sound pressure.
-
-## Connecting Voice Chat
+## Audio routing
 
 ```text
-Physical microphone + App music
-                 |
-            CABLE Input
-                 |
-            CABLE Output
-                 |
-         QQ or game voice chat
+Selected physical microphone ─┐
+                              ├─> CABLE Input ─> CABLE Output ─> QQ / game chat
+Application BGM ─────────────┘
 ```
 
-1. Open the voice-settings tab in the player.
-2. Select your physical microphone.
-3. Select **CABLE Input** as the sending device.
-4. In QQ or your game, select **CABLE Output** as the microphone.
+The player mixes the selected microphone and its own BGM into **CABLE Input**. In the chat application, choose **CABLE Output** as the recording device. The player does not capture other applications' audio and does not change the chat application's settings for you.
 
-The virtual channel receives your selected microphone and this application's music. Other computer audio is not captured. Music also plays through your default headphones.
+The two music sliders are separate digital gains. Their UI range is 0–100%, mapped to an application gain range of 0–30%; these are not calibrated sound-pressure levels. Music controls do not change the selected microphone level.
 
-### If Teammates Cannot Hear Music
+## Build from source
 
-- Refresh devices and confirm both cable endpoint selections.
-- Raise the voice-chat music slider.
-- Play a song and use the audio-channel check in the voice-settings tab.
-- Check the chat application's input meter and noise suppression settings.
-- Reselect your physical microphone if the saved device is unavailable.
-
-## Local Data
-
-The distribution stores settings in `%LOCALAPPDATA%\BgmHotkeyShare` and imported songs in its `bgm` subfolder. No personal songs, device settings, recordings, logs, screenshots, credentials, or developer workstation paths are included in the download.
-
-Uninstalling the player preserves user songs and settings. It does not uninstall the shared VB-CABLE driver.
-
-## Building from Source
-
-Run these commands in PowerShell from the repository root on Windows:
+Run PowerShell on a Windows development machine with the .NET Framework C# compiler installed:
 
 ```powershell
-.\build.ps1
-.\build-share.ps1
+.\build.ps1 -OutputName 'BgmHotkey_1.8.4.exe'
 ```
 
-The first command builds the empty-library player and prepares its WebView2 dependencies. The second creates the distribution installer; its output location is printed when the build completes.
+The app uses C# 5, .NET Framework 4.8, Windows Forms, WinMM, Media Foundation, and WebView2. The interface is an embedded HTML/CSS/SVG document hosted by WebView2. The build copies the WebView2 SDK assemblies and architecture-specific loader beside the executable.
 
-Keep the player EXE, its configuration file, the WebView2 assemblies, and the loader together when running a source build.
+To build a share installer, download the official x64 Evergreen Standalone WebView2 Runtime installer from the [Microsoft WebView2 download page](https://developer.microsoft.com/microsoft-edge/webview2/) and place it at `vendor/webview2/runtime-installer/MicrosoftEdgeWebView2RuntimeInstallerX64.exe`. The signed VB-CABLE driver archive is included at `vendor/vb-cable/VBCABLE_Driver_Pack45.zip`. Then run:
 
-The application uses C# 5, .NET Framework 4.8, Windows Forms, and an embedded offline HTML/CSS/SVG interface hosted in WebView2. Native MP3 playback provides headphone audio. Media Foundation and WinMM provide the music and microphone mix for the virtual channel. No Node.js server is needed at runtime.
+```powershell
+.\packaging\build-share.ps1 -OutputName 'WanxiangBgmSetup-1.8.4-local.exe'
+```
 
-VB-CABLE is donationware from [VB-Audio](https://vb-audio.com/Cable/). The bundled standard driver package is unmodified and retains the vendor's terms. WebView2 and Tabler notices accompany their components.
+The packaging script validates the Microsoft and VB-Audio Authenticode signatures and refuses to overwrite an existing installer. The WebView2 Evergreen runtime is omitted from the source tree because the offline installer is large; it is embedded in the downloadable release installer. The official Evergreen Standalone installer can be installed without an internet connection and is kept up to date through Microsoft's Evergreen update process. See Microsoft's [WebView2 distribution guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution).
+
+## Project layout and privacy
+
+See [Project Structure](docs/PROJECT_STRUCTURE.md), [Installation Notes](docs/INSTALLATION.md), and [Changelog](CHANGELOG.md). Third-party notices are in [`licenses/`](licenses/).
+
+The public source and release contain no personal music library, recordings, promotional video, workstation logs, or local machine paths. The share installer starts with an empty library. User settings and imported files stay in the current Windows user's local application data folder; uninstalling the player preserves them and does not remove the shared VB-CABLE driver or WebView2 runtime.
+
+## Third-party components
+
+The installer includes the official VB-CABLE driver by VB-Audio and the Microsoft WebView2 Evergreen Runtime offline installer. See the relevant third-party notices and distribution terms before redistributing modified packages. This project's installer is not digitally signed.
