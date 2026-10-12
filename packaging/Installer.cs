@@ -12,8 +12,8 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: TargetFramework(".NETFramework,Version=v4.8")]
-[assembly: AssemblyVersion("1.9.5.0")]
-[assembly: AssemblyFileVersion("1.9.5.0")]
+[assembly: AssemblyVersion("1.9.6.0")]
+[assembly: AssemblyFileVersion("1.9.6.0")]
 [assembly: AssemblyTitle("Wanxiang BGM Player Installer")]
 
 internal static class Installer
@@ -151,21 +151,21 @@ internal static class Installer
     {
         string installedVersion;
         if (!ShouldInstallWebView2Runtime(HasWebView2Runtime(out installedVersion))) { report("已检测到 WebView2 Runtime " + installedVersion + "，跳过安装。"); return; }
-        report("正在安装随包提供的 Microsoft WebView2 Runtime…");
+        report("缺少 WebView2 Runtime，正在通过微软官方 Bootstrapper 联网安装…");
         string temporary = Path.Combine(Path.GetTempPath(), "WanxiangBgm-WebView2-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temporary);
         try
         {
-            string setup = Path.Combine(temporary, "MicrosoftEdgeWebView2RuntimeInstallerX64.exe");
-            WriteResource("WebRuntime", setup);
+            string setup = Path.Combine(temporary, "MicrosoftEdgeWebview2Setup.exe");
+            WriteResource("WebBootstrapper", setup);
             using (Process process = Process.Start(new ProcessStartInfo(setup, "/silent /install") { UseShellExecute = false, WorkingDirectory = temporary }))
             {
-                if (process == null) throw new InvalidOperationException("无法启动 WebView2 Runtime 安装程序。");
+                if (process == null) throw new InvalidOperationException("无法启动微软官方 WebView2 Bootstrapper。");
                 while (!process.WaitForExit(100)) Application.DoEvents();
                 int code = process.ExitCode;
                 if (!IsWebView2InstallVerified(HasWebView2Runtime(out installedVersion)))
-                    throw new InvalidOperationException("WebView2 Runtime 安装后检测未通过（安装器退出代码 " + code + "）。请重新运行安装包；如果问题仍在，请先检查 Windows 更新服务。");
-                report("WebView2 Runtime 已安装（" + installedVersion + "）；安装器退出代码 " + code + "，并已通过安装后注册检测。");
+                    throw new InvalidOperationException("微软 Bootstrapper 未能安装 WebView2 Runtime（退出代码 " + code + "）。缺少 Runtime 时需要联网访问 Microsoft 下载服务；请检查网络或组织策略后重试。");
+                report("WebView2 Runtime 已就绪（" + installedVersion + "），并已通过安装后检测。");
             }
         }
         finally
@@ -286,7 +286,7 @@ internal static class Installer
         using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath))
         {
             key.SetValue("DisplayName", "万象 BGM 播放器");
-            key.SetValue("DisplayVersion", "1.9.5");
+            key.SetValue("DisplayVersion", "1.9.6");
             key.SetValue("InstallLocation", Folder);
             key.SetValue("DisplayIcon", Path.Combine(Folder, "BgmHotkey.exe"));
             key.SetValue("UninstallString", "\"" + Path.Combine(Folder, "Uninstall.exe") + "\" /uninstall");
@@ -423,7 +423,7 @@ internal sealed class SetupForm : Form
 
         _pages[0] = BuildPage(new Label { Text = "一个安装包，完成播放器与运行环境准备。", AutoSize = true, MaximumSize = new Size(590, 0), Font = new Font(Font.FontFamily, 18F, FontStyle.Bold), ForeColor = Color.FromArgb(23, 47, 63), Margin = new Padding(0, 0, 0, 14) },
             Body("默认曲库为空。安装后添加自己的歌曲并设置快捷键。升级时会保留已有歌曲和设置。"),
-            Body("WebView2 Runtime 已包含在安装包中；系统已有运行时会直接复用。"),
+            Body("安装器会先检测 WebView2 Runtime 并复用已有版本。若缺少，将通过微软官方 Bootstrapper 联网安装；请保持网络畅通。"),
             Body("VB-CABLE 官方驱动也已包含。首次安装需要 Windows 管理员授权，并按驱动提示重启电脑。"),
             Body("VB-CABLE 由 VB-Audio 提供，官方网站为 www.vb-cable.com。它采用 donationware 模式，可通过官网了解并支持作者："),
             WebLink());

@@ -1,8 +1,8 @@
 万象 BGM 播放器 · Windows 64 位安装版
-版本：1.9.5
+版本：1.9.6
 
 【安装】
-运行安装包，依次点击“下一步”，选择安装文件夹，再点击“安装”。安装包内置微软 WebView2 Evergreen 离线运行时，已安装时会自动复用。VB-CABLE 官方签名驱动也随包提供；首次安装驱动时，Windows 会要求管理员授权，随后请按官方驱动程序的说明完成安装并重启。游戏或 QQ 的麦克风输入请选择 CABLE Output。
+运行安装包，依次点击“下一步”，选择安装文件夹，再点击“安装”。安装器会检测并复用已有的 WebView2 Runtime；若未安装，则通过随包提供的微软官方 Bootstrapper 联网下载并安装，因此这种情况下需要互联网连接。VB-CABLE 官方签名驱动也随包提供；首次安装驱动时，Windows 会要求管理员授权，随后请按官方驱动程序的说明完成安装并重启。游戏或 QQ 的麦克风输入请选择 CABLE Output。
 
 支持 Intel/AMD 架构的 64 位 Windows 10 1903 或更高版本、Windows 11，要求 .NET Framework 4.8 或更高版本。支持的新版 Windows 通常已包含所需的 .NET Framework。安装包默认空曲库，不会覆盖个人歌曲、快捷键或设置。
 
@@ -33,7 +33,7 @@
 虚拟通道只包含所选麦克风与本程序的 BGM，不捕获其他电脑软件的音频。耳机 BGM 和发送给队友的 BGM 可分别调节；两者的滑块范围均为 0–100%，映射到程序数字增益 0–30%，不是校准后的声压分贝。音乐音量不改变麦克风音量。
 
 【依赖与许可】
-WebView2 Runtime 使用微软官方 Evergreen Standalone 离线安装程序；安装包已内置，已有运行时会复用，运行时由微软自动更新。
+WebView2 Runtime 使用微软官方 Evergreen Bootstrapper；已有运行时会复用，缺少运行时时需要联网从微软下载。Bootstrapper 使用微软文档支持的静默安装参数，安装后会检查运行时注册信息。运行时由微软自动更新。安装包不再包含完整离线 Runtime。
 
 VB-CABLE 由 VB-Audio 提供，官方网站为 www.vb-cable.com，是 Donationware。随播放器分发的官方驱动保持原样，并在安装界面注明来源和支持方式。用户可通过 VB-Audio 官方产品页了解或捐赠：https://vb-audio.com/Cable/。首次安装驱动需要管理员授权并可能需要重启。卸载播放器不会卸载共享 VB-CABLE 驱动。
 

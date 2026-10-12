@@ -15,7 +15,7 @@ vendor/
   webview2/
     sdk/net462/             WebView2 SDK assemblies used at build time
     loader/                  x86 and x64 WebView2 loader DLLs
-    runtime-installer/       Local-only Microsoft Evergreen offline runtime
+    bootstrapper/            Local-only Microsoft Evergreen Bootstrapper
 release/                    Local build output; not uploaded by the local build
 local-only/                 Ignored local build cache, diagnostics, and private media
 bgm/                        Local development library; never published
@@ -24,7 +24,7 @@ README.md                   English project overview
 CHANGELOG.md                Release history
 ```
 
-`release/`, `local-only/`, and the root `bgm/` folder are excluded from Git. The runtime installer under `vendor/webview2/runtime-installer/` is also excluded because it is a large, version-updated Microsoft binary. The published installer already contains it.
+`release/`, `local-only/`, and the root `bgm/` folder are excluded from Git. The Bootstrapper under `vendor/webview2/bootstrapper/` is also excluded; the build validates its Microsoft signature and embeds it in the release installer. The full Evergreen Runtime is downloaded by the Bootstrapper only when the installing computer does not already have it.
 
 The scene and audio implementation is split across `Settings.cs` (scene migration and persistence), `RandomShuffleBag.cs` (scene-scoped no-repeat queues), `LoudnessAnalyzer.cs` (background integrated-loudness analysis), and `SoundPackService.cs` (validated portable scene packages). `AudioEngine.cs` retains the shared microphone/BGM mixer and virtual-channel limiter.
 

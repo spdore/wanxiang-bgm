@@ -1,8 +1,8 @@
-param([string]$OutputName = 'WanxiangBgmSetup-1.9.5.exe')
+param([string]$OutputName = 'WanxiangBgmSetup-1.9.6.exe')
 
 $ErrorActionPreference = 'Stop'
-$GuideName = 'INSTALLATION-1.9.5.txt'
-$Version = '1.9.5'
+$GuideName = 'INSTALLATION-1.9.6.txt'
+$Version = '1.9.6'
 if ([System.IO.Path]::GetFileName($OutputName) -ne $OutputName -or [System.IO.Path]::GetExtension($OutputName) -ne '.exe') {
     throw 'OutputName must be a .exe file name without a path.'
 }
@@ -43,14 +43,14 @@ foreach ($taskDriverName in @('VBCABLE_Setup_x64.exe','VBCABLE_Setup.exe')) {
     $taskDriverSignature = Get-AuthenticodeSignature -LiteralPath $taskDriverSetup.FullName
     if ($taskDriverSignature.Status -ne 'Valid' -or $taskDriverSignature.SignerCertificate.Subject -notmatch 'BUREL VINCENT') { throw "VB-CABLE signature validation failed: $taskDriverName." }
 }
-$taskRuntime = Join-Path $taskRoot 'vendor\webview2\runtime-installer\MicrosoftEdgeWebView2RuntimeInstallerX64.exe'
-if (-not (Test-Path -LiteralPath $taskRuntime)) { throw 'Download the official Microsoft WebView2 Evergreen Standalone Installer (x64) and place it at vendor/webview2/runtime-installer/MicrosoftEdgeWebView2RuntimeInstallerX64.exe.' }
-$taskRuntimeSignature = Get-AuthenticodeSignature -LiteralPath $taskRuntime
-if ($taskRuntimeSignature.Status -ne 'Valid' -or $taskRuntimeSignature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'WebView2 Runtime signature validation failed.' }
+$taskBootstrapper = Join-Path $taskRoot 'vendor\webview2\bootstrapper\MicrosoftEdgeWebview2Setup.exe'
+if (-not (Test-Path -LiteralPath $taskBootstrapper)) { throw 'Download the official Microsoft WebView2 Evergreen Bootstrapper from https://go.microsoft.com/fwlink/p/?LinkId=2124703 and place it at vendor/webview2/bootstrapper/MicrosoftEdgeWebview2Setup.exe.' }
+$taskBootstrapperSignature = Get-AuthenticodeSignature -LiteralPath $taskBootstrapper
+if ($taskBootstrapperSignature.Status -ne 'Valid' -or $taskBootstrapperSignature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'WebView2 Bootstrapper signature validation failed.' }
 $taskUninstaller = Join-Path $taskBuild 'Uninstaller.exe'
 & $taskCompiler @taskCommon @taskReferences /define:UNINSTALLER_ONLY /main:Installer "/out:$taskUninstaller" $taskInstallerSource
 if ($LASTEXITCODE -ne 0) { throw 'Uninstaller compilation failed.' }
-$taskWebResources = @("/resource:$(Join-Path $taskRoot 'licenses\Tabler-LICENSE.txt'),IconLicense", "/resource:$(Join-Path $taskRoot 'licenses\WebView2-LICENSE.txt'),WebLicense", "/resource:$(Join-Path $taskRoot 'licenses\WebView2-NOTICE.txt'),WebNotice", "/resource:$(Join-Path $taskSdk 'Microsoft.Web.WebView2.Core.dll'),WebCore", "/resource:$(Join-Path $taskSdk 'Microsoft.Web.WebView2.WinForms.dll'),WebForms", "/resource:$(Join-Path $taskRoot 'vendor\webview2\loader\win-x64\WebView2Loader.dll'),WebLoader64", "/resource:$(Join-Path $taskRoot 'vendor\webview2\loader\win-x86\WebView2Loader.dll'),WebLoader32", "/resource:$taskRuntime,WebRuntime", "/resource:$taskUninstaller,Uninstaller")
+$taskWebResources = @("/resource:$(Join-Path $taskRoot 'licenses\Tabler-LICENSE.txt'),IconLicense", "/resource:$(Join-Path $taskRoot 'licenses\WebView2-LICENSE.txt'),WebLicense", "/resource:$(Join-Path $taskRoot 'licenses\WebView2-NOTICE.txt'),WebNotice", "/resource:$(Join-Path $taskSdk 'Microsoft.Web.WebView2.Core.dll'),WebCore", "/resource:$(Join-Path $taskSdk 'Microsoft.Web.WebView2.WinForms.dll'),WebForms", "/resource:$(Join-Path $taskRoot 'vendor\webview2\loader\win-x64\WebView2Loader.dll'),WebLoader64", "/resource:$(Join-Path $taskRoot 'vendor\webview2\loader\win-x86\WebView2Loader.dll'),WebLoader32", "/resource:$taskBootstrapper,WebBootstrapper", "/resource:$taskUninstaller,Uninstaller")
 & $taskCompiler @taskCommon @taskReferences @taskWebResources /main:Installer "/out:$taskSetup" "/resource:$taskPlayer,Player" "/resource:$taskConfig,Config" "/resource:$taskGuide,Guide" "/resource:$taskDriver,Driver" $taskInstallerSource
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 Copy-Item -LiteralPath $taskGuide -Destination (Join-Path $taskOutput $GuideName)

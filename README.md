@@ -6,11 +6,11 @@
 
 Wanxiang BGM Player plays local audio from global keyboard shortcuts. It mixes the selected physical microphone with this application's music and sends that mix to VB-CABLE. Headphone music and voice-chat music have independent volume controls.
 
-**Current version: 1.9.5** · Windows 10 version 1903 or later / Windows 11 · x64 · Chinese interface · Empty library in the installer
+**Current version: 1.9.6** · Windows 10 version 1903 or later / Windows 11 · x64 · Chinese interface · Empty library in the installer
 
 ## Download and install
 
-Download the [1.9.5 Windows installer](https://github.com/spdore/wanxiang-bgm/releases/download/v1.9.5/WanxiangBgmSetup-1.9.5.exe), choose an installation folder, and continue through the setup wizard. The installer contains the official Microsoft WebView2 Evergreen offline runtime and the official VB-CABLE driver package. An existing WebView2 runtime or VB-CABLE installation is reused. Installing the driver requires Windows administrator approval and may require a restart; follow the signed driver's prompts.
+Download the [1.9.6 Windows installer](https://github.com/spdore/wanxiang-bgm/releases/download/v1.9.6/WanxiangBgmSetup-1.9.6.exe), choose an installation folder, and continue through the setup wizard. The installer checks for the Microsoft WebView2 Runtime and reuses it when present. If it is missing, the included official Microsoft Bootstrapper downloads and installs it, so an internet connection is required in that case. The official VB-CABLE driver package is included. Installing the driver requires Windows administrator approval and may require a restart; follow the signed driver's prompts.
 
 The package is for 64-bit Intel/AMD Windows 10 version 1903 or later, or Windows 11, and requires .NET Framework 4.8 or later. The installer starts with an empty music library. Add your own files after installation.
 
@@ -78,18 +78,18 @@ The player timeline keeps its full-song seeking behavior and saved anchor marker
 Run PowerShell on a Windows development machine with the .NET Framework C# compiler installed:
 
 ```powershell
-.\build.ps1 -OutputName 'BgmHotkey_1.9.5.exe'
+.\build.ps1 -OutputName 'BgmHotkey_1.9.6.exe'
 ```
 
 The app uses C# 5, .NET Framework 4.8, Windows Forms, WinMM, Media Foundation, and WebView2. The interface is an embedded HTML/CSS/SVG document hosted by WebView2. The build copies the WebView2 SDK assemblies and architecture-specific loader beside the executable.
 
-To build a share installer, download the official x64 Evergreen Standalone WebView2 Runtime installer from the [Microsoft WebView2 download page](https://developer.microsoft.com/microsoft-edge/webview2/) and place it at `vendor/webview2/runtime-installer/MicrosoftEdgeWebView2RuntimeInstallerX64.exe`. The signed VB-CABLE driver archive is included at `vendor/vb-cable/VBCABLE_Driver_Pack45.zip`. Then run:
+To build a share installer, download the official Microsoft Evergreen WebView2 Bootstrapper from [Microsoft](https://go.microsoft.com/fwlink/p/?LinkId=2124703) and save it as `vendor/webview2/bootstrapper/MicrosoftEdgeWebview2Setup.exe`. The signed VB-CABLE driver archive is included at `vendor/vb-cable/VBCABLE_Driver_Pack45.zip`. Then run:
 
 ```powershell
-.\packaging\build-share.ps1 -OutputName 'WanxiangBgmSetup-1.9.5.exe'
+.\packaging\build-share.ps1 -OutputName 'WanxiangBgmSetup-1.9.6.exe'
 ```
 
-The packaging script validates the Microsoft and VB-Audio Authenticode signatures and refuses to overwrite an existing installer. The WebView2 Evergreen runtime is omitted from the source tree because the offline installer is large; it is embedded in the downloadable release installer. The official Evergreen Standalone installer can be installed without an internet connection and is kept up to date through Microsoft's Evergreen update process. See Microsoft's [WebView2 distribution guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution).
+The packaging script validates the Microsoft Bootstrapper and VB-Audio Authenticode signatures and refuses to overwrite an existing installer. The small Bootstrapper is embedded in the release package; the full Evergreen Runtime is downloaded from Microsoft only if it is missing. Setup therefore needs internet access only for that missing-runtime case. The Bootstrapper uses Microsoft's documented `/silent /install` command and setup verifies the Runtime after installation. This package is not a fully offline installer. See Microsoft's [WebView2 distribution guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution).
 
 ## Project layout and privacy
 
@@ -99,5 +99,5 @@ The source tree and share installer contain no personal music library, recording
 
 ## Third-party components
 
-The installer includes the official VB-CABLE driver by VB-Audio and the Microsoft WebView2 Evergreen Runtime offline installer. See the relevant third-party notices and distribution terms before redistributing modified packages. This project's installer is not digitally signed.
+The installer includes the official VB-CABLE driver by VB-Audio and Microsoft's official WebView2 Evergreen Bootstrapper. See the relevant third-party notices and distribution terms before redistributing modified packages. This project's installer is not digitally signed.
 

@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$OutputName = "BgmHotkey_1.9.5.exe"
+    [string]$OutputName = "BgmHotkey_1.9.6.exe"
 )
 
 $ErrorActionPreference = "Stop"

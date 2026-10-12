@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.6
+
+- Replaces the 214 MB WebView2 Evergreen offline installer embedded in the setup package with Microsoft's small official Evergreen Bootstrapper.
+- Reuses an existing WebView2 Runtime. If missing, setup runs the documented `/silent /install` Bootstrapper command and verifies the installed Runtime; internet access is required for this case.
+- Keeps the signed VB-CABLE driver package and the existing installation flow. Setup is no longer fully offline when WebView2 Runtime is absent.
+
 ## 1.9.5
 
 - Centers the playback thumb on the progress rail by resetting the native range-control appearance and aligning the thumb to the transparent slider track.

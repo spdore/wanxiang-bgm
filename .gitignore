@@ -25,6 +25,7 @@
 /WebView2Loader.dll
 /packaging/.build-*/
 /local-only/build-staging/
+/vendor/webview2/bootstrapper/*.exe
 /vendor/webview2/runtime-installer/*.exe
 
 # Local settings, credentials, and diagnostics
