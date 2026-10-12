@@ -8,23 +8,44 @@ namespace BgmHotkey
 {
     internal sealed partial class MainMenuForm
     {
-        private readonly Random _random = new Random();
+        private readonly RandomShuffleBag _shuffleBag = new RandomShuffleBag();
+        private string _lastRandomSceneId = "";
+        private string _lastRandomFileName = "";
 
         private void PlayRandom()
         {
             if (_engine.StopActiveTrack()) return;
-            List<TrackDefinition> candidates = new List<TrackDefinition>();
-            foreach (string file in _settings.RandomFileNames ?? new string[0])
-            {
-                if (AppSettings.IsAudioFileName(file) && File.Exists(AppPaths.TrackPath(file)))
-                    candidates.Add(new TrackDefinition("random_file:" + file, Path.GetFileNameWithoutExtension(file), file, 0));
-            }
-            if (candidates.Count == 0)
+            string sceneId = _settings.ActiveSceneId;
+            List<string> available = new List<string>();
+            foreach (string file in _settings.ActiveRandomFiles ?? new string[0])
+                if (AppSettings.IsAudioFileName(file) && File.Exists(AppPaths.TrackPath(file))) available.Add(file);
+            string selected = _shuffleBag.Next(sceneId, available);
+            if (selected == null)
             {
                 ShowLibraryNotice("随机曲库没有可播放歌曲，请打开“随机播放设置”勾选歌曲。", true);
                 return;
             }
-            _engine.ToggleTrack(candidates[_random.Next(candidates.Count)], false);
+            LoudnessAnalysis analysis = _settings.FindAnalysis(selected);
+            double gain = analysis == null ? 0 : analysis.GainDb;
+            _lastRandomSceneId = sceneId;
+            _lastRandomFileName = selected;
+            _engine.ToggleTrack(new TrackDefinition("random_file:" + selected, Path.GetFileNameWithoutExtension(selected), selected, 0, null, gain), false);
+        }
+
+        private void ResetRandomShuffleForRefresh()
+        {
+            _shuffleBag.Refresh(_settings.ActiveSceneId);
+        }
+
+        private void MarkFailedRandomPlayback()
+        {
+            PlaybackSnapshot snapshot = _engine.GetPlaybackSnapshot();
+            if (!String.IsNullOrWhiteSpace(snapshot.Error) && !String.IsNullOrWhiteSpace(_lastRandomFileName) &&
+                String.Equals(snapshot.TrackId, "random_file:" + _lastRandomFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                _shuffleBag.MarkFailed(_lastRandomSceneId, _lastRandomFileName);
+                _lastRandomFileName = "";
+            }
         }
 
         private void OpenRandomSettings(object sender, EventArgs e)
@@ -55,7 +76,7 @@ namespace BgmHotkey
         {
             SuspendLayout();
             _settings = settings;
-            _keyName = settings.RandomKey ?? "";
+            _keyName = settings.ActiveRandomKey ?? "";
             Text = "随机播放设置";
             StartPosition = FormStartPosition.CenterParent;
             AutoScaleMode = AutoScaleMode.Dpi;
@@ -90,8 +111,8 @@ namespace BgmHotkey
             binding.Controls.Add(clear, 2, 0);
             layout.Controls.Add(binding, 0, 1);
             layout.Controls.Add(UiTheme.Label("勾选参与随机的歌曲（可多选）", 10, true), 0, 2);
-            _songs = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false, BorderStyle = BorderStyle.FixedSingle, HorizontalScrollbar = true, BackColor = Color.White, Margin = new Padding(0, 0, 0, 8) };
-            HashSet<string> selected = new HashSet<string>(settings.RandomFileNames ?? new string[0], StringComparer.OrdinalIgnoreCase);
+            _songs = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false, BorderStyle = BorderStyle.FixedSingle, HorizontalScrollbar = true, BackColor = UiTheme.Surface, ForeColor = UiTheme.Text, Margin = new Padding(0, 0, 0, 8) };
+            HashSet<string> selected = new HashSet<string>(settings.ActiveRandomFiles ?? new string[0], StringComparer.OrdinalIgnoreCase);
             string scanError = "";
             try
             {
@@ -149,11 +170,11 @@ namespace BgmHotkey
             foreach (SongChoice choice in _songs.CheckedItems) ids.Add(choice.Track.FileName);
             if (!String.IsNullOrWhiteSpace(_keyName) && ids.Count == 0)
             { _notice.Text = "请至少勾选一首歌曲，或清除随机快捷键。"; return; }
-            string oldKey = _settings.RandomKey; string[] oldIds = _settings.RandomFileNames;
-            _settings.RandomKey = _keyName; _settings.RandomFileNames = ids.ToArray();
+            string oldKey = _settings.ActiveRandomKey; string[] oldIds = _settings.ActiveRandomFiles;
+            _settings.ActiveRandomKey = _keyName; _settings.ActiveRandomFiles = ids.ToArray();
             string error;
             if (!SettingsStore.TrySave(_settings, out error))
-            { _settings.RandomKey = oldKey; _settings.RandomFileNames = oldIds; _notice.Text = "保存失败：" + error; return; }
+            { _settings.ActiveRandomKey = oldKey; _settings.ActiveRandomFiles = oldIds; _notice.Text = "保存失败：" + error; return; }
             DialogResult = DialogResult.OK; Close();
         }
         private sealed class SongChoice

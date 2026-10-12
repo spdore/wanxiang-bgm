@@ -13,14 +13,15 @@ namespace BgmHotkey
             if (!File.Exists(source)) throw new FileNotFoundException("歌曲文件不存在。", source);
             if (!AudioFormatCatalog.IsSupportedExtension(source))
                 throw new InvalidOperationException("请选择支持的音频格式：" + AudioFormatCatalog.SupportedExtensionsText + "。");
+            SavedTrack asset = null;
             foreach (SavedTrack existing in settings.Tracks)
                 if (String.Equals(Path.GetFullPath(AppPaths.TrackPath(existing.FileName)), source, StringComparison.OrdinalIgnoreCase))
-                    return existing;
+                { asset = existing; break; }
             Directory.CreateDirectory(AppPaths.TrackPath(""));
-            string fileName = Path.GetFileName(source);
+            string fileName = asset == null ? Path.GetFileName(source) : asset.FileName;
             string destination = AppPaths.TrackPath(fileName);
-            bool copy = !String.Equals(source, Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase);
-            if (copy)
+            bool copy = asset == null && !String.Equals(source, Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase);
+            if (asset == null && copy)
             {
                 string stem = Path.GetFileNameWithoutExtension(fileName);
                 int suffix = 1;
@@ -33,22 +34,41 @@ namespace BgmHotkey
                 }
                 File.Copy(source, destination, false);
             }
-            SavedTrack track = new SavedTrack { Id = "song_" + Guid.NewGuid().ToString("N"), Name = Path.GetFileNameWithoutExtension(source), FileName = fileName };
-            List<SavedTrack> tracks = new List<SavedTrack>(settings.Tracks);
-            tracks.Add(track);
-            settings.Tracks = tracks.ToArray();
-            settings.SetKey(track.Id, "");
+            SavedTrack track = asset;
+            if (track == null)
+            {
+                track = new SavedTrack { Id = "song_" + Guid.NewGuid().ToString("N"), Name = Path.GetFileNameWithoutExtension(source), FileName = fileName };
+                List<SavedTrack> tracks = new List<SavedTrack>(settings.Tracks);
+                tracks.Add(track);
+                settings.Tracks = tracks.ToArray();
+            }
+            ScenePreset scene = settings.ActiveScene;
+            bool alreadyInScene = false;
+            foreach (SceneTrack item in scene.Tracks)
+                if (String.Equals(item.TrackId, track.Id, StringComparison.OrdinalIgnoreCase)) alreadyInScene = true;
+            if (!alreadyInScene)
+            {
+                List<SceneTrack> sceneTracks = new List<SceneTrack>(scene.Tracks ?? new SceneTrack[0]);
+                sceneTracks.Add(new SceneTrack { TrackId = track.Id, StartSeconds = 0 });
+                scene.Tracks = sceneTracks.ToArray();
+                settings.SetKey(track.Id, "");
+            }
             settings.Normalize();
-            return track;
+            return settings.FindActiveTrack(track.Id);
         }
 
         public static void Remove(AppSettings settings, string id)
         {
             settings.Normalize();
-            List<SavedTrack> tracks = new List<SavedTrack>();
-            foreach (SavedTrack track in settings.Tracks)
-                if (!String.Equals(track.Id, id, StringComparison.OrdinalIgnoreCase)) tracks.Add(track);
-            settings.Tracks = tracks.ToArray();
+            ScenePreset scene = settings.ActiveScene;
+            List<SceneTrack> tracks = new List<SceneTrack>();
+            foreach (SceneTrack track in scene.Tracks ?? new SceneTrack[0])
+                if (!String.Equals(track.TrackId, id, StringComparison.OrdinalIgnoreCase)) tracks.Add(track);
+            scene.Tracks = tracks.ToArray();
+            List<TrackBinding> bindings = new List<TrackBinding>();
+            foreach (TrackBinding binding in scene.Bindings ?? new TrackBinding[0])
+                if (!String.Equals(binding.TrackId, id, StringComparison.OrdinalIgnoreCase)) bindings.Add(binding);
+            scene.Bindings = bindings.ToArray();
             settings.Normalize();
         }
     }

@@ -12,6 +12,9 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: TargetFramework(".NETFramework,Version=v4.8")]
+[assembly: AssemblyVersion("1.9.5.0")]
+[assembly: AssemblyFileVersion("1.9.5.0")]
+[assembly: AssemblyTitle("Wanxiang BGM Player Installer")]
 
 internal static class Installer
 {
@@ -283,7 +286,7 @@ internal static class Installer
         using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath))
         {
             key.SetValue("DisplayName", "万象 BGM 播放器");
-            key.SetValue("DisplayVersion", "1.8.4");
+            key.SetValue("DisplayVersion", "1.9.5");
             key.SetValue("InstallLocation", Folder);
             key.SetValue("DisplayIcon", Path.Combine(Folder, "BgmHotkey.exe"));
             key.SetValue("UninstallString", "\"" + Path.Combine(Folder, "Uninstall.exe") + "\" /uninstall");

@@ -1,8 +1,8 @@
-param([string]$OutputName = 'WanxiangBgmSetup-1.8.4.exe')
+param([string]$OutputName = 'WanxiangBgmSetup-1.9.5.exe')
 
 $ErrorActionPreference = 'Stop'
-$GuideName = 'INSTALLATION-1.8.4.txt'
-$Version = '1.8.4'
+$GuideName = 'INSTALLATION-1.9.5.txt'
+$Version = '1.9.5'
 if ([System.IO.Path]::GetFileName($OutputName) -ne $OutputName -or [System.IO.Path]::GetExtension($OutputName) -ne '.exe') {
     throw 'OutputName must be a .exe file name without a path.'
 }

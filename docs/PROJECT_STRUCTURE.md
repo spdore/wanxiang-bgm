@@ -16,7 +16,7 @@ vendor/
     sdk/net462/             WebView2 SDK assemblies used at build time
     loader/                  x86 and x64 WebView2 loader DLLs
     runtime-installer/       Local-only Microsoft Evergreen offline runtime
-release/                    Local build output; installer is published as a Release asset
+release/                    Local build output; not uploaded by the local build
 local-only/                 Ignored local build cache, diagnostics, and private media
 bgm/                        Local development library; never published
 build.ps1                   Local player build entry point
@@ -25,5 +25,7 @@ CHANGELOG.md                Release history
 ```
 
 `release/`, `local-only/`, and the root `bgm/` folder are excluded from Git. The runtime installer under `vendor/webview2/runtime-installer/` is also excluded because it is a large, version-updated Microsoft binary. The published installer already contains it.
+
+The scene and audio implementation is split across `Settings.cs` (scene migration and persistence), `RandomShuffleBag.cs` (scene-scoped no-repeat queues), `LoudnessAnalyzer.cs` (background integrated-loudness analysis), and `SoundPackService.cs` (validated portable scene packages). `AudioEngine.cs` retains the shared microphone/BGM mixer and virtual-channel limiter.
 
 The share build writes intermediate files to `local-only/build-staging/`. This keeps transient builds, logs, test fixtures, and personal media outside the public project tree. The local development executable is built in the project root beside the local `bgm/` folder; user-installed builds instead store songs and settings in the current user's local application data folder.

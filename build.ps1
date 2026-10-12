@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$OutputName = "BgmHotkey.exe"
+    [string]$OutputName = "BgmHotkey_1.9.5.exe"
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,16 +38,28 @@ $arguments = @(
     "/reference:System.Core.dll",
     "/reference:System.Drawing.dll",
     "/reference:System.Windows.Forms.dll",
-    "/reference:System.Xml.dll"
+    "/reference:System.Xml.dll",
+    "/reference:System.IO.Compression.dll",
+    "/reference:System.IO.Compression.FileSystem.dll",
+    "/reference:System.Web.Extensions.dll"
 )
 if (Test-Path -LiteralPath $iconPath) {
     $arguments += "/win32icon:$iconPath"
 }
 $webSdk = Join-Path $projectRoot 'vendor\webview2\sdk\net462'
-$arguments += @("/reference:$(Join-Path $webSdk 'Microsoft.Web.WebView2.Core.dll')", "/reference:$(Join-Path $webSdk 'Microsoft.Web.WebView2.WinForms.dll')", '/reference:System.Web.Extensions.dll', "/resource:$(Join-Path $projectRoot 'app\ui\index.html'),Interface")
-Copy-Item -LiteralPath (Join-Path $webSdk 'Microsoft.Web.WebView2.Core.dll'),(Join-Path $webSdk 'Microsoft.Web.WebView2.WinForms.dll') -Destination $projectRoot -Force
+$arguments += @("/reference:$(Join-Path $webSdk 'Microsoft.Web.WebView2.Core.dll')", "/reference:$(Join-Path $webSdk 'Microsoft.Web.WebView2.WinForms.dll')", "/resource:$(Join-Path $projectRoot 'app\ui\index.html'),Interface")
+function Copy-IfDifferent([string]$sourcePath, [string]$destinationPath) {
+    if (Test-Path -LiteralPath $destinationPath) {
+        $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+        $destinationHash = (Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
+        if ($sourceHash -eq $destinationHash) { return }
+    }
+    Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+}
+Copy-IfDifferent (Join-Path $webSdk 'Microsoft.Web.WebView2.Core.dll') (Join-Path $projectRoot 'Microsoft.Web.WebView2.Core.dll')
+Copy-IfDifferent (Join-Path $webSdk 'Microsoft.Web.WebView2.WinForms.dll') (Join-Path $projectRoot 'Microsoft.Web.WebView2.WinForms.dll')
 $loaderArchitecture = if ([Environment]::Is64BitOperatingSystem) { 'win-x64' } else { 'win-x86' }
-Copy-Item -LiteralPath (Join-Path $projectRoot "vendor\webview2\loader\$loaderArchitecture\WebView2Loader.dll") -Destination $projectRoot -Force
+Copy-IfDifferent (Join-Path $projectRoot "vendor\webview2\loader\$loaderArchitecture\WebView2Loader.dll") (Join-Path $projectRoot 'WebView2Loader.dll')
 $arguments += $sources
 
 Push-Location $projectRoot

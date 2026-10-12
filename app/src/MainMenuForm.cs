@@ -62,14 +62,15 @@ namespace BgmHotkey
                     try { BeginInvoke(new MethodInvoker(delegate
                     {
                         if (IsDisposed) return;
-                        SavedTrack[] previousTracks = (SavedTrack[])_settings.Tracks.Clone();
-                        TrackBinding[] previousBindings = (TrackBinding[])_settings.Bindings.Clone();
-                        string[] previousRandomFiles = (string[])_settings.RandomFileNames.Clone();
+                        SavedTrack[] previousAssets = (SavedTrack[])_settings.Tracks.Clone();
+                        SavedTrack[] previousTracks = _settings.ActiveTracks();
+                        ScenePreset previousScene = _settings.CloneActiveScene();
                         HashSet<string> filesBefore = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                         string libraryFolder = AppPaths.TrackPath("");
                         if (Directory.Exists(libraryFolder))
                             foreach (string filePath in Directory.GetFiles(libraryFolder)) filesBefore.Add(Path.GetFileName(filePath));
                         List<string> addedFiles = new List<string>();
+                        List<string> newTrackFiles = new List<string>();
                         List<string> copyFailures = new List<string>();
                         int addedTrackCount = 0;
                         bool settingsChanged = false;
@@ -83,6 +84,7 @@ namespace BgmHotkey
                                 {
                                     settingsChanged = true;
                                     addedTrackCount++;
+                                    if (!newTrackFiles.Contains(track.FileName)) newTrackFiles.Add(track.FileName);
                                     if (!filesBefore.Contains(track.FileName)) addedFiles.Add(track.FileName);
                                 }
                             }
@@ -93,19 +95,20 @@ namespace BgmHotkey
                             string error;
                             if (!SettingsStore.TrySave(_settings, out error))
                             {
-                                _settings.Tracks = previousTracks;
-                                _settings.Bindings = previousBindings;
-                                _settings.RandomFileNames = previousRandomFiles;
+                                _settings.Tracks = previousAssets;
+                                _settings.RestoreScene(previousScene);
                                 _settings.Normalize();
                                 foreach (string file in addedFiles)
                                     try { string copied = AppPaths.TrackPath(file); if (File.Exists(copied)) File.Delete(copied); } catch { }
                                 failures.Add("保存曲库失败：" + error);
                                 addedFiles.Clear();
+                                newTrackFiles.Clear();
                                 addedTrackCount = 0;
                             }
                         }
                         _capturingKey = false;
                         RefreshWebFiles();
+                        if (newTrackFiles.Count > 0) QueueLoudnessAnalysis(newTrackFiles);
                         RebuildBindings();
                         string summary = addedTrackCount > 0 ? "已添加 " + addedTrackCount + " 首音频。" : "没有添加可播放的音频。";
                         if (failures.Count > 0 || copyFailures.Count > 0)
@@ -124,16 +127,12 @@ namespace BgmHotkey
 
         private void DeleteSong(TrackDefinition track)
         {
-            string[] previousRandomFiles = _settings.RandomFileNames;
-            SavedTrack[] previousTracks = _settings.Tracks;
-            TrackBinding[] previousBindings = _settings.Bindings;
+            ScenePreset previousScene = _settings.CloneActiveScene();
             SongLibrary.Remove(_settings, track.Id);
             string error;
             if (!SettingsStore.TrySave(_settings, out error))
             {
-                _settings.RandomFileNames = previousRandomFiles;
-                _settings.Tracks = previousTracks;
-                _settings.Bindings = previousBindings;
+                _settings.RestoreScene(previousScene);
                 _settings.Normalize();
                 ShowLibraryNotice("删除失败：" + error, true);
                 return;
@@ -207,7 +206,7 @@ namespace BgmHotkey
                 return;
             }
 
-            if (!String.IsNullOrWhiteSpace(_settings.RandomKey) && String.Equals(_settings.RandomKey, keyName, StringComparison.OrdinalIgnoreCase))
+            if (!String.IsNullOrWhiteSpace(_settings.ActiveRandomKey) && String.Equals(_settings.ActiveRandomKey, keyName, StringComparison.OrdinalIgnoreCase))
             {
                 PlayRandom();
                 return;
@@ -245,7 +244,7 @@ namespace BgmHotkey
             trackBar.Maximum = 100;
             trackBar.TickFrequency = 10;
             trackBar.TickStyle = TickStyle.None;
-            trackBar.BackColor = Color.White;
+            trackBar.BackColor = UiTheme.Surface;
             trackBar.SmallChange = 1;
             trackBar.LargeChange = 5;
             trackBar.Value = Math.Max(0, Math.Min(100, value));
@@ -395,6 +394,7 @@ namespace BgmHotkey
 
         private void EngineStatusChanged(object sender, EventArgs e)
         {
+            MarkFailedRandomPlayback();
             if (IsDisposed || !IsHandleCreated)
                 return;
             try
@@ -418,6 +418,12 @@ namespace BgmHotkey
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            SoundPackService.Cancel();
+            if (!String.IsNullOrWhiteSpace(_pendingImportToken))
+            {
+                SoundPackService.CancelPrepared(_pendingImportToken);
+                _pendingImportToken = "";
+            }
             SettingsStore.Save(_settings);
             base.OnFormClosing(e);
         }

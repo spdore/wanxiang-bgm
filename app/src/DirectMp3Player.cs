@@ -19,14 +19,16 @@ namespace BgmHotkey
         private readonly object _gate = new object();
         private readonly string _alias;
         private double _endSeconds;
+        private double _trackGain = 1.0;
         private bool _opened;
 
-        public DirectMp3Player(string path, double startSeconds, double? endSeconds, int sliderVolume)
+        public DirectMp3Player(string path, double startSeconds, double? endSeconds, int sliderVolume, double trackGain)
         {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentException("音频文件路径为空。", "path");
 
             _alias = "Bgm" + Guid.NewGuid().ToString("N");
+            _trackGain = Math.Max(0, Math.Min(Math.Pow(10.0, LoudnessAnalyzer.MaximumBoostDb / 20.0), trackGain));
             Send("open \"" + path + "\" type mpegvideo alias " + _alias);
             _opened = true;
             try
@@ -96,13 +98,38 @@ namespace BgmHotkey
         public void SetSliderVolume(int sliderVolume)
         {
             int clamped = Math.Max(0, Math.Min(100, sliderVolume));
-            int mciVolume = (int)Math.Round(clamped * 3 * 0.90);
             lock (_gate)
             {
+                _sliderVolume = clamped;
                 if (_opened)
+                {
+                    int mciVolume = MapVolume(clamped, _trackGain);
                     Send("setaudio " + _alias + " volume to " + mciVolume.ToString(CultureInfo.InvariantCulture));
+                }
             }
         }
+
+        public void SetTrackGain(double trackGain)
+        {
+            lock (_gate)
+            {
+                _trackGain = Math.Max(0, Math.Min(Math.Pow(10.0, LoudnessAnalyzer.MaximumBoostDb / 20.0), trackGain));
+                if (_opened)
+                {
+                    int mciVolume = MapVolume(_sliderVolume, _trackGain);
+                    Send("setaudio " + _alias + " volume to " + mciVolume.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+        }
+
+        internal static int MapVolume(int sliderVolume, double trackGain)
+        {
+            int clamped = Math.Max(0, Math.Min(100, sliderVolume));
+            double gain = Math.Max(0, Math.Min(Math.Pow(10.0, LoudnessAnalyzer.MaximumBoostDb / 20.0), trackGain));
+            return Math.Min(1000, (int)Math.Round(clamped * 3 * 0.90 * gain));
+        }
+
+        private int _sliderVolume;
 
         private void PlayFrom(double startSeconds, double? endSeconds)
         {

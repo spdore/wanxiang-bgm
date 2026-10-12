@@ -54,8 +54,6 @@ namespace BgmHotkey
         {
             private const int PropVariantInt64 = 20;
             private const int PropVariantUInt64 = 21;
-            private const int PeakLimit = 29490;
-            private const double PeakGain = 0.90;
             private readonly Queue<short[]> _pendingBuffers = new Queue<short[]>();
             private IMFSourceReader _reader;
             private IMFMediaType _nativeType;
@@ -238,13 +236,7 @@ namespace BgmHotkey
                     int count = Math.Min(targetSamples - written, _currentSamples.Length - _currentOffset);
                     count -= count % Channels;
                     if (count <= 0) break;
-                    for (int i = 0; i < count; i++)
-                    {
-                        int sample = (int)Math.Round(_currentSamples[_currentOffset + i] * PeakGain);
-                        if (sample > PeakLimit) sample = PeakLimit;
-                        if (sample < -PeakLimit) sample = -PeakLimit;
-                        destination[written + i] = (short)sample;
-                    }
+                    Array.Copy(_currentSamples, _currentOffset, destination, written, count);
                     written += count;
                     _currentOffset += count;
                 }

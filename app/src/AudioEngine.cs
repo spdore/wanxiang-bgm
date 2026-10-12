@@ -29,6 +29,8 @@ namespace BgmHotkey
     internal sealed class AudioEngine : IDisposable
     {
         private const double MaximumMusicGain = 0.30;
+        private const int SpectrumFftSize = 2048;
+        private const int SpectrumBandCount = 32;
         private readonly object _stateGate = new object();
         private readonly object _deviceGate = new object();
         private readonly AppSettings _settings;
@@ -46,6 +48,8 @@ namespace BgmHotkey
         private bool _loading;
         private bool _seeking;
         private bool _directHeadphonePlayback;
+        private double _currentTrackGain = 1.0;
+        private readonly FinalMixLimiter _finalMixLimiter = new FinalMixLimiter();
         private Mp3StreamPlayer _streamPlayer;
         private DirectMp3Player _directPlayer;
         private string _playingFileName = "";
@@ -70,11 +74,22 @@ namespace BgmHotkey
 #endif
         private volatile int _microphonePeak;
         private volatile int _musicPeak;
+        private volatile int _headphoneMusicPeak;
         private volatile int _outputPeak;
+        private readonly short[] _spectrumRing = new short[SpectrumFftSize];
+        private readonly double[] _spectrumReal = new double[SpectrumFftSize];
+        private readonly double[] _spectrumImaginary = new double[SpectrumFftSize];
+        private readonly int[] _spectrumSmoothed = new int[SpectrumBandCount];
+        private volatile int[] _musicSpectrum = new int[SpectrumBandCount];
+        private int _spectrumWrite;
+        private int _spectrumSamples;
+        private int _spectrumUpdateCounter;
 
         public int MicrophonePeak { get { return _microphonePeak; } }
         public int MusicPeak { get { return _musicPeak; } }
+        public int HeadphoneMusicPeak { get { return _headphoneMusicPeak; } }
         public int OutputPeak { get { return _outputPeak; } }
+        public int[] MusicSpectrum { get { return (int[])_musicSpectrum.Clone(); } }
 
         public event EventHandler StatusChanged;
         public string PlaybackSummary
@@ -256,6 +271,7 @@ namespace BgmHotkey
                 _lastTrackId = track.Id;
                 _lastTrackName = track.Name;
                 _lastFileName = track.FileName;
+                _currentTrackGain = Math.Max(0, Math.Min(Math.Pow(10.0, LoudnessAnalyzer.MaximumBoostDb / 20.0), track.GainLinear));
                 _sessionId = ++_nextSessionId;
                 _seekGeneration++;
                 sessionId = _sessionId;
@@ -323,7 +339,7 @@ namespace BgmHotkey
                 {
                     try
                     {
-                        direct = new DirectMp3Player(AppPaths.TrackPath(track.FileName), startSeconds, endSeconds, volume);
+                        direct = new DirectMp3Player(AppPaths.TrackPath(track.FileName), startSeconds, endSeconds, volume, track.GainLinear);
                         directHeadphonePlayback = true;
                     }
                     catch (Exception ex)
@@ -399,6 +415,7 @@ namespace BgmHotkey
                 _playingTrackId = "";
                 _playingFileName = "";
                 _directHeadphonePlayback = false;
+                _currentTrackGain = 1.0;
                 _sessionId = ++_nextSessionId;
                 _seekGeneration++;
                 _playbackStatus = "已停止";
@@ -614,6 +631,7 @@ namespace BgmHotkey
                 bool outputPaced = false;
                 int musicSessionId;
                 int musicGeneration;
+                double activeTrackGain = 1.0;
                 try { ReadMusic(music, out musicSessionId, out musicGeneration); }
                 catch (Exception ex)
                 {
@@ -623,6 +641,16 @@ namespace BgmHotkey
                     AppPaths.Log("音乐混音读取失败：" + ex);
                     StopActiveTrack();
                     SetDeviceError("音乐混音读取失败：" + ex.Message);
+                }
+                if (musicSessionId != 0)
+                {
+                    lock (_stateGate)
+                    {
+                        if (_playing && _sessionId == musicSessionId && _seekGeneration == musicGeneration)
+                            activeTrackGain = _currentTrackGain;
+                        else
+                            Array.Clear(music, 0, music.Length);
+                    }
                 }
                 lock (_deviceGate)
                 {
@@ -664,11 +692,19 @@ namespace BgmHotkey
                         streamToHeadphones = _playing && !_directHeadphonePlayback;
                     }
 
+                    UpdateMusicSpectrum(music, Math.Max(cableVolume, headphoneVolume) / 100.0 * MaximumMusicGain * activeTrackGain);
+
+                    // Expose the music source peak after each route's configured gain.
+                    // This observes the decoded stream without changing either output route.
+                    int sourceMusicPeak = Peak(music);
+                    _headphoneMusicPeak = Clamp((int)Math.Round(sourceMusicPeak * headphoneVolume / 100.0 * MaximumMusicGain * activeTrackGain), 0, Int16.MaxValue);
+
                     if (_cable != null)
                     {
-                        MixCable(music, microphone, cableSamples, cableVolume);
+                        int cableMusicPeak;
+                        _finalMixLimiter.Mix(music, microphone, cableSamples, cableVolume, activeTrackGain, out cableMusicPeak);
                         _microphonePeak = Peak(microphone);
-                        _musicPeak = (int)Math.Round(Peak(music) * cableVolume / 100.0 * MaximumMusicGain);
+                        _musicPeak = cableMusicPeak;
                         try
                         {
                             _cable.Write(cableSamples);
@@ -681,13 +717,14 @@ namespace BgmHotkey
                             try { _cable.Dispose(); } catch { }
                             _cable = null;
                             _outputPeak = 0;
+                            _musicPeak = 0;
                             SetDeviceError("VB-CABLE 输出发生错误，已停止虚拟麦克风混音。");
                         }
                     }
                     else
                     {
                         _microphonePeak = Peak(microphone);
-                        _musicPeak = (int)Math.Round(Peak(music) * cableVolume / 100.0 * MaximumMusicGain);
+                        _musicPeak = 0;
                         _outputPeak = 0;
                     }
 
@@ -695,7 +732,7 @@ namespace BgmHotkey
                     {
                         try
                         {
-                            ScaleHeadphoneMusic(music, headphoneVolume);
+                            ScaleHeadphoneMusic(music, headphoneVolume, activeTrackGain);
                             _headphones.Write(music);
                             outputPaced = true;
                         }
@@ -714,6 +751,100 @@ namespace BgmHotkey
                 // paces the mixer; adding another 20 ms sleep would progressively starve it.
                 if (!outputPaced) Thread.Sleep(20);
             }
+        }
+
+        private void UpdateMusicSpectrum(short[] samples, double routeGain)
+        {
+            int frames = samples.Length / 2;
+            for (int i = 0; i < frames; i++)
+            {
+                int mono = ((int)samples[i * 2] + samples[i * 2 + 1]) / 2;
+                _spectrumRing[_spectrumWrite] = (short)mono;
+                _spectrumWrite = (_spectrumWrite + 1) % SpectrumFftSize;
+            }
+            _spectrumSamples = Math.Min(SpectrumFftSize, _spectrumSamples + frames);
+            if (++_spectrumUpdateCounter < 5 || _spectrumSamples < SpectrumFftSize) return;
+            _spectrumUpdateCounter = 0;
+
+            int oldest = _spectrumWrite;
+            for (int i = 0; i < SpectrumFftSize; i++)
+            {
+                int ringIndex = oldest + i;
+                if (ringIndex >= SpectrumFftSize) ringIndex -= SpectrumFftSize;
+                double window = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / (SpectrumFftSize - 1));
+                _spectrumReal[i] = _spectrumRing[ringIndex] * routeGain * window;
+                _spectrumImaginary[i] = 0.0;
+            }
+
+            int reversed = 0;
+            for (int i = 1; i < SpectrumFftSize; i++)
+            {
+                int bit = SpectrumFftSize >> 1;
+                while ((reversed & bit) != 0)
+                {
+                    reversed ^= bit;
+                    bit >>= 1;
+                }
+                reversed ^= bit;
+                if (i < reversed)
+                {
+                    double swap = _spectrumReal[i];
+                    _spectrumReal[i] = _spectrumReal[reversed];
+                    _spectrumReal[reversed] = swap;
+                    swap = _spectrumImaginary[i];
+                    _spectrumImaginary[i] = _spectrumImaginary[reversed];
+                    _spectrumImaginary[reversed] = swap;
+                }
+            }
+
+            for (int length = 2; length <= SpectrumFftSize; length <<= 1)
+            {
+                double angle = -2.0 * Math.PI / length;
+                double stepReal = Math.Cos(angle);
+                double stepImaginary = Math.Sin(angle);
+                int half = length >> 1;
+                for (int start = 0; start < SpectrumFftSize; start += length)
+                {
+                    double twiddleReal = 1.0;
+                    double twiddleImaginary = 0.0;
+                    for (int offset = 0; offset < half; offset++)
+                    {
+                        int even = start + offset;
+                        int odd = even + half;
+                        double oddReal = _spectrumReal[odd] * twiddleReal - _spectrumImaginary[odd] * twiddleImaginary;
+                        double oddImaginary = _spectrumReal[odd] * twiddleImaginary + _spectrumImaginary[odd] * twiddleReal;
+                        _spectrumReal[odd] = _spectrumReal[even] - oddReal;
+                        _spectrumImaginary[odd] = _spectrumImaginary[even] - oddImaginary;
+                        _spectrumReal[even] += oddReal;
+                        _spectrumImaginary[even] += oddImaginary;
+                        double nextReal = twiddleReal * stepReal - twiddleImaginary * stepImaginary;
+                        twiddleImaginary = twiddleReal * stepImaginary + twiddleImaginary * stepReal;
+                        twiddleReal = nextReal;
+                    }
+                }
+            }
+
+            double frequencyRatio = 18000.0 / 35.0;
+            for (int band = 0; band < SpectrumBandCount; band++)
+            {
+                double lowHz = 35.0 * Math.Pow(frequencyRatio, (double)band / SpectrumBandCount);
+                double highHz = 35.0 * Math.Pow(frequencyRatio, (double)(band + 1) / SpectrumBandCount);
+                int firstBin = Math.Max(1, (int)Math.Floor(lowHz * SpectrumFftSize / WinMm.SampleRate));
+                int lastBin = Math.Min(SpectrumFftSize / 2, Math.Max(firstBin, (int)Math.Ceiling(highHz * SpectrumFftSize / WinMm.SampleRate)));
+                double maxMagnitude = 0.0;
+                for (int bin = firstBin; bin <= lastBin; bin++)
+                {
+                    double real = _spectrumReal[bin];
+                    double imaginary = _spectrumImaginary[bin];
+                    double magnitude = Math.Sqrt(real * real + imaginary * imaginary) * 4.0 / SpectrumFftSize;
+                    if (magnitude > maxMagnitude) maxMagnitude = magnitude;
+                }
+
+                int target = AudioRouteProbe.MeterValue((int)Math.Min(Int16.MaxValue, Math.Round(maxMagnitude)));
+                double smoothing = target >= _spectrumSmoothed[band] ? 0.65 : 0.45;
+                _spectrumSmoothed[band] = Math.Max(0, Math.Min(100, (int)Math.Round(_spectrumSmoothed[band] * (1.0 - smoothing) + target * smoothing)));
+            }
+            _musicSpectrum = (int[])_spectrumSmoothed.Clone();
         }
 
         private void ReadMusic(short[] destination, out int sessionId, out int generation)
@@ -765,6 +896,7 @@ namespace BgmHotkey
                         _seeking = false;
                         _playingTrackId = "";
                         _playingFileName = "";
+                        _currentTrackGain = 1.0;
                         _directHeadphonePlayback = false;
                         _playbackError = error == null ? "" : error.Message;
                         _playbackStatus = error == null ? "播放结束" : "播放失败：" + error.Message;
@@ -795,7 +927,12 @@ namespace BgmHotkey
 
         internal static void ScaleHeadphoneMusic(short[] samples, int volume)
         {
-            double gain = Clamp(volume, 0, 100) / 100.0 * MaximumMusicGain;
+            ScaleHeadphoneMusic(samples, volume, 1.0);
+        }
+
+        internal static void ScaleHeadphoneMusic(short[] samples, int volume, double trackGain)
+        {
+            double gain = Clamp(volume, 0, 100) / 100.0 * MaximumMusicGain * trackGain;
             for (int i = 0; i < samples.Length; i++) samples[i] = (short)Math.Max(Int16.MinValue, Math.Min(Int16.MaxValue, Math.Round(samples[i] * gain)));
         }
 
@@ -878,6 +1015,38 @@ namespace BgmHotkey
             {
                 WinMm.timeEndPeriod(1);
                 _timerResolutionActive = false;
+            }
+        }
+    }
+
+    internal sealed class FinalMixLimiter
+    {
+        internal const double TargetDbfs = -1.0;
+        private const double MaximumSample = 32767.0;
+        private static readonly double Ceiling = MaximumSample * Math.Pow(10.0, TargetDbfs / 20.0);
+        private static readonly double ReleaseCoefficient = 1.0 - Math.Exp(-1.0 / (0.08 * WinMm.SampleRate));
+        private double _gain = 1.0;
+
+        public void Mix(short[] music, short[] microphone, short[] destination, int volume, double trackGain, out int musicOutputPeak)
+        {
+            if (music == null || microphone == null || destination == null) throw new ArgumentNullException("samples");
+            if (microphone.Length != music.Length || destination.Length != music.Length) throw new ArgumentException("音频块长度必须一致。");
+            double musicGain = Math.Max(0, Math.Min(100, volume)) / 100.0 * 0.30 * trackGain;
+            musicOutputPeak = 0;
+            for (int i = 0; i < music.Length; i++)
+            {
+                double scaledMusic = music[i] * musicGain;
+                double mixed = microphone[i] + scaledMusic;
+                double magnitude = Math.Abs(mixed);
+                double desired = magnitude > Ceiling ? Ceiling / magnitude : 1.0;
+                if (desired < _gain) _gain = desired;
+                else _gain += (desired - _gain) * ReleaseCoefficient;
+                int limitedMusic = (int)Math.Round(scaledMusic * _gain);
+                musicOutputPeak = Math.Max(musicOutputPeak, Math.Min(Int16.MaxValue, Math.Abs(limitedMusic)));
+                double limited = mixed * _gain;
+                if (limited > Ceiling) limited = Ceiling;
+                else if (limited < -Ceiling) limited = -Ceiling;
+                destination[i] = (short)Math.Round(limited);
             }
         }
     }
