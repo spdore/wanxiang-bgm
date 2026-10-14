@@ -13,6 +13,7 @@
 - Replaces the song-import progress/results window with a themed WebView2 modal that shows per-file Chinese status, expandable technical details, progress, cancellation, and source-preservation messaging.
 - Adds headphone-only audition for unsaved start/end drafts in the anchor editor; auditions use the accurate streaming seek path and stop on editor close, scene change, or application shutdown.
 - Adds per-scene normal and continuous random modes. Continuous playback advances only on a session-identified natural completion, reuses the no-repeat shuffle bag, skips failed candidates with bounded retries, and stops cleanly on a second random action or other explicit interruption.
+- Keeps continuous playback active across Random Playback page navigation and refreshes that do not change the selected candidate set. A real candidate-set change cancels the run only after its settings save succeeds.
 - Removes the playback-position line from the anchor editor timeline; only the editable start/end markers and selected range remain visible.
 - Sets the player and installer metadata to version 1.9.7. Real platform samples are still required to verify each supported encrypted-file variant.
 
