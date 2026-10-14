@@ -102,8 +102,21 @@ namespace BgmHotkey
     _webFiles=RandomFileCatalog.Scan(folder);
     string[] previous=_settings.ActiveRandomFiles??new string[0];
     string[] retained=RandomFileCatalog.RetainAvailable(previous,_webFiles);
-    if(retained.Length!=previous.Length){_settings.ActiveRandomFiles=retained;string saveError;if(!SettingsStore.TrySave(_settings,out saveError)){_settings.ActiveRandomFiles=previous;AppPaths.Log("清理随机曲库中已移除的歌曲失败："+saveError);}}
+    if(!SameRandomFileSet(previous,retained)){
+     _settings.ActiveRandomFiles=retained;
+     string saveError;
+     if(!SettingsStore.TrySave(_settings,out saveError)){_settings.ActiveRandomFiles=previous;AppPaths.Log("清理随机曲库中已移除的歌曲失败："+saveError);}
+     else CancelContinuousRandom();
+    }
    }catch(Exception ex){NotifyWeb("读取歌曲文件夹失败："+ex.Message);}
+  }
+  private static bool SameRandomFileSet(string[] left,string[] right)
+  {
+   HashSet<string> leftSet=new HashSet<string>(left??new string[0],StringComparer.OrdinalIgnoreCase);
+   HashSet<string> rightSet=new HashSet<string>(right??new string[0],StringComparer.OrdinalIgnoreCase);
+   if(leftSet.Count!=rightSet.Count)return false;
+   foreach(string file in leftSet)if(!rightSet.Contains(file))return false;
+   return true;
   }
   private void NotifyWeb(string text)
   {
@@ -643,11 +656,18 @@ namespace BgmHotkey
      string error;if(!SettingsStore.TrySave(_settings,out error)){if(random)_settings.ActiveRandomKey=old;else _settings.SetKey(id,old);NotifyWeb("保存失败："+error);}else {RebuildBindings();NotifyWeb("快捷键已保存。");}
     }
     else if(action=="randomFiles") {
-     List<string> selected=new List<string>();object raw;
-     if(message.TryGetValue("files",out raw))foreach(object item in (System.Collections.IEnumerable)raw){string file=Convert.ToString(item);if(AppSettings.IsAudioFileName(file)&&Array.Exists(_webFiles,delegate(string f){return String.Equals(f,file,StringComparison.OrdinalIgnoreCase);})&&!selected.Contains(file))selected.Add(file);}
-     CancelContinuousRandom();
-     string[] old=_settings.ActiveRandomFiles;_settings.ActiveRandomFiles=selected.ToArray();string error;
-     if(!SettingsStore.TrySave(_settings,out error)){_settings.ActiveRandomFiles=old;NotifyWeb("保存失败："+error);}
+     List<string> selected=new List<string>();HashSet<string> selectedSet=new HashSet<string>(StringComparer.OrdinalIgnoreCase);object raw;
+     if(message.TryGetValue("files",out raw))foreach(object item in (System.Collections.IEnumerable)raw){
+      string file=Convert.ToString(item);if(!AppSettings.IsAudioFileName(file))continue;
+      string availableFile=null;foreach(string candidateFile in _webFiles)if(String.Equals(candidateFile,file,StringComparison.OrdinalIgnoreCase)){availableFile=candidateFile;break;}
+      if(availableFile!=null&&selectedSet.Add(availableFile))selected.Add(availableFile);
+     }
+     string[] old=_settings.ActiveRandomFiles??new string[0];string[] updated=selected.ToArray();
+     if(!SameRandomFileSet(old,updated)){
+      _settings.ActiveRandomFiles=updated;string error;
+      if(!SettingsStore.TrySave(_settings,out error)){_settings.ActiveRandomFiles=old;NotifyWeb("保存失败："+error);}
+      else CancelContinuousRandom();
+     }
     }
     else if(action=="randomMode")
     {
@@ -689,7 +709,7 @@ namespace BgmHotkey
      string sceneError;if(!SettingsStore.TrySave(_settings,out sceneError)){_settings.Scenes=previousScenes.ToArray();_settings.ActiveSceneId=previous;TrackCatalog.Configure(_settings);NotifyWeb("删除场景失败："+sceneError);return;}
      _webEditorTrackId="";RefreshWebFiles();RebuildBindings();NotifyWeb("场景已删除，音频文件仍保留。");
     }
-    else if(action=="refreshFiles"){CancelContinuousRandom();RefreshWebFiles();ResetRandomShuffleForRefresh();PublishWebState();}
+    else if(action=="refreshFiles"){RefreshWebFiles();PublishWebState();}
     else if(action=="exportPack")ExportSoundPack();
     else if(action=="importPack")BeginImportSoundPack();
     else if(action=="confirmPackImport")ConfirmSoundPackImport();

@@ -180,11 +180,6 @@ namespace BgmHotkey
             StartNextContinuousTrack(_continuousRandomToken);
         }
 
-        private void ResetRandomShuffleForRefresh()
-        {
-            _shuffleBag.Refresh(_settings.ActiveSceneId);
-        }
-
         private void MarkFailedRandomPlayback()
         {
             PlaybackSnapshot snapshot = _engine.GetPlaybackSnapshot();
