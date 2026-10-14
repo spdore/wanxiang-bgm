@@ -28,6 +28,11 @@
 /vendor/webview2/bootstrapper/*.exe
 /vendor/webview2/runtime-installer/*.exe
 
+# Python-generated build and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 # Local settings, credentials, and diagnostics
 /.env
 /.env.*

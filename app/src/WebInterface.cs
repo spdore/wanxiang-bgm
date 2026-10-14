@@ -114,6 +114,11 @@ namespace BgmHotkey
   {
    if(!_webReady||_web==null||IsDisposed)return;
    try {
+    if(_songImportState!=null&&_activeSongImport!=null&&String.Equals(_songImportState.OperationId,_activeSongImport.Id.ToString("N"),StringComparison.OrdinalIgnoreCase))
+    {
+     _songImportState.ElapsedMilliseconds=_activeSongImport.ElapsedMilliseconds;
+     _songImportState.ProgressMode=_songImportState.Complete?"complete":"indeterminate";
+    }
     List<object> tracks=new List<object>();bool playing=false;
     foreach(TrackDefinition t in TrackCatalog.All) {
      bool active=_engine.IsTrackPlaying(t.Id);playing|=active;
@@ -123,22 +128,32 @@ namespace BgmHotkey
     List<string> mics=new List<string>();foreach(AudioDevice d in _devices.Microphones)mics.Add(d.Name);
     List<string> cables=new List<string>();foreach(AudioDevice d in _devices.Cables)cables.Add(d.Name);
     PlaybackSnapshot playback=_engine.GetPlaybackSnapshot();
-    object playbackState=new {sessionId=playback.SessionId,generation=playback.Generation,trackId=playback.TrackId,trackName=playback.TrackName,fileName=playback.FileName,state=playback.State,positionSeconds=playback.PositionSeconds,durationSeconds=playback.DurationSeconds,startSeconds=playback.StartSeconds,endSeconds=playback.EndSeconds,error=playback.Error,canSeek=playback.CanSeek};
+    object playbackState=new {sessionId=playback.SessionId,generation=playback.Generation,trackId=playback.TrackId,trackName=playback.TrackName,fileName=playback.FileName,state=playback.State,positionSeconds=playback.PositionSeconds,durationSeconds=playback.DurationSeconds,startSeconds=playback.StartSeconds,endSeconds=playback.EndSeconds,error=playback.Error,canSeek=playback.CanSeek,playbackMode=playback.PlaybackMode};
     SavedTrack editorTrack=_settings.FindActiveTrack(_webEditorTrackId);
     object editor=new {id=_webEditorTrackId,loading=_webEditorLoading,error=_webEditorError,warning=_webEditorWarning,duration=_webEditorDuration,start=editorTrack==null?0:editorTrack.StartSeconds,end=editorTrack==null?(double?)null:editorTrack.EndSeconds};
     List<object> scenes=new List<object>();foreach(ScenePreset scene in _settings.Scenes??new ScenePreset[0])
     {
      int keyCount=0;foreach(TrackBinding binding in scene.Bindings??new TrackBinding[0])if(binding!=null&&!String.IsNullOrWhiteSpace(binding.Key))keyCount++;
      int randomCount=(scene.RandomFileNames??new string[0]).Length;
-     scenes.Add(new {id=scene.Id,name=scene.Name,trackCount=(scene.Tracks??new SceneTrack[0]).Length,keyCount=keyCount,randomCount=randomCount});
+     scenes.Add(new {id=scene.Id,name=scene.Name,trackCount=(scene.Tracks??new SceneTrack[0]).Length,keyCount=keyCount,randomCount=randomCount,randomMode=RandomPlaybackMode.Normalize(scene.RandomMode)});
     }
-    _web.CoreWebView2.PostWebMessageAsJson(_webJson.Serialize(new {type="state",tracks=tracks,head=_settings.HeadphoneVolume,cable=_settings.CableVolume,randomKey=_settings.ActiveRandomKey,selected=_settings.ActiveRandomFiles??new string[0],files=_webFiles,formats=AudioFormatCatalog.SupportedExtensionsText,microphones=mics,cables=cables,microphone=_settings.MicrophoneDeviceName,cableDevice=_settings.CableDeviceName,playing=playing||playback.State=="playing"||playback.State=="loading",summary=_engine.PlaybackSummary,status=_status.Text,playback=playbackState,editor=editor,probe=_webProbe,probing=_webProbing,micPeak=AudioRouteProbe.MeterValue(_engine.MicrophonePeak),musicPeak=AudioRouteProbe.MeterValue(_engine.MusicPeak),headphoneMusicPeak=AudioRouteProbe.MeterValue(_engine.HeadphoneMusicPeak),outputPeak=AudioRouteProbe.MeterValue(_engine.OutputPeak),musicSpectrum=_engine.MusicSpectrum,scenes=scenes,activeScene=_settings.ActiveSceneId,packBusy=_packBusy,packProgress=SoundPackService.ProgressText}));
+    ScenePreset activeScene=_settings.ActiveScene;
+    object songImport=null;
+    if(_songImportState!=null)
+    {
+     List<object> importResults=new List<object>();
+     foreach(SongImportResultItem item in _songImportState.Results??new SongImportResultItem[0])
+      importResults.Add(new {index=item.Index,fileName=item.FileName,status=item.Status,detail=item.Detail,technicalDetail=item.TechnicalDetail,success=item.Success,pending=item.Pending,outcome=item.Outcome});
+     songImport=new {operationId=_songImportState.OperationId,active=_songImportState.Active,complete=_songImportState.Complete,cancelRequested=_songImportState.CancelRequested,cancelled=_songImportState.Cancelled,total=_songImportState.Total,current=_songImportState.Current,added=_songImportState.Added,succeeded=_songImportState.Succeeded,failed=_songImportState.Failed,timedOut=_songImportState.TimedOut,cancelledCount=_songImportState.CancelledCount,elapsedMilliseconds=_songImportState.ElapsedMilliseconds,progressMode=_songImportState.ProgressMode,currentFile=_songImportState.CurrentFile,stage=_songImportState.Stage,summary=_songImportState.Summary,results=importResults.ToArray()};
+    }
+    _web.CoreWebView2.PostWebMessageAsJson(_webJson.Serialize(new {type="state",tracks=tracks,head=_settings.HeadphoneVolume,cable=_settings.CableVolume,randomKey=_settings.ActiveRandomKey,randomMode=RandomPlaybackMode.Normalize(activeScene==null?"":activeScene.RandomMode),continuousActive=_continuousRandomActive,selected=_settings.ActiveRandomFiles??new string[0],files=_webFiles,formats=AudioFormatCatalog.SupportedExtensionsText,microphones=mics,cables=cables,microphone=_settings.MicrophoneDeviceName,cableDevice=_settings.CableDeviceName,playing=playing||playback.State=="playing"||playback.State=="loading",summary=_engine.PlaybackSummary,status=_status.Text,playback=playbackState,editor=new {id=_webEditorTrackId,requestId=_webEditorRequest,loading=_webEditorLoading,error=_webEditorError,warning=_webEditorWarning,duration=_webEditorDuration,start=editorTrack==null?0:editorTrack.StartSeconds,end=editorTrack==null?(double?)null:editorTrack.EndSeconds},songImport=songImport,probe=_webProbe,probing=_webProbing,micPeak=AudioRouteProbe.MeterValue(_engine.MicrophonePeak),musicPeak=AudioRouteProbe.MeterValue(_engine.MusicPeak),headphoneMusicPeak=AudioRouteProbe.MeterValue(_engine.HeadphoneMusicPeak),outputPeak=AudioRouteProbe.MeterValue(_engine.OutputPeak),musicSpectrum=_engine.MusicSpectrum,scenes=scenes,activeScene=_settings.ActiveSceneId,packBusy=_packBusy,packProgress=SoundPackService.ProgressText}));
    }catch(InvalidOperationException){}
   }
 
   private void InspectTrackForAnchors(string id)
   {
    TrackDefinition track=TrackCatalog.Find(id);if(track==null)return;
+   StopAnchorPreview();
    int request=++_webEditorRequest;
    _webEditorTrackId=track.Id;_webEditorDuration=0;_webEditorLoading=true;_webEditorError="";_webEditorWarning="";_webEditorFileLength=0;_webEditorLastWriteUtc=DateTime.MinValue;PublishWebState();
    string path=AppPaths.TrackPath(track.FileName);
@@ -161,6 +176,49 @@ namespace BgmHotkey
      PublishWebState();
     }));}catch(InvalidOperationException){}
    });
+  }
+
+  private void StartAnchorPreview(Dictionary<string,object> message,string id)
+  {
+   string sceneId=WebString(message,"sceneId"),requestText=WebString(message,"editorRequestId");
+   int requestId;
+   if(!Int32.TryParse(requestText,out requestId)||requestId!=_webEditorRequest||
+      !String.Equals(sceneId,_settings.ActiveSceneId,StringComparison.OrdinalIgnoreCase)||
+      !String.Equals(id,_webEditorTrackId,StringComparison.OrdinalIgnoreCase))
+   {NotifyWeb("起止点编辑状态已变化，请重新打开后试听。");return;}
+   if(_webEditorLoading||_webEditorDuration<=0||!String.IsNullOrWhiteSpace(_webEditorError))
+   {NotifyWeb("请等待音频时长读取完成后再试听。");return;}
+   object rawStart,rawEnd;double start;
+   if(!message.TryGetValue("startSeconds",out rawStart)||!Double.TryParse(Convert.ToString(rawStart,System.Globalization.CultureInfo.InvariantCulture),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out start)||Double.IsNaN(start)||Double.IsInfinity(start)||start<0||start>=_webEditorDuration)
+   {NotifyWeb("开始时间必须在歌曲时长以内。");return;}
+   double? end=null;
+   if(message.TryGetValue("endSeconds",out rawEnd)&&rawEnd!=null)
+   {
+    double parsed;
+    if(!Double.TryParse(Convert.ToString(rawEnd,System.Globalization.CultureInfo.InvariantCulture),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out parsed)||Double.IsNaN(parsed)||Double.IsInfinity(parsed)||parsed<=start||parsed>_webEditorDuration)
+    {NotifyWeb("结束时间必须晚于开始时间且不能超过歌曲时长。");return;}
+    end=parsed;
+   }
+   TrackDefinition track=TrackCatalog.Find(id);if(track==null){NotifyWeb("这首歌曲已从曲库移除。");return;}
+   try
+   {
+    FileInfo currentFile=new FileInfo(AppPaths.TrackPath(track.FileName));
+    if(!currentFile.Exists||currentFile.Length!=_webEditorFileLength||currentFile.LastWriteTimeUtc!=_webEditorLastWriteUtc)
+    {InspectTrackForAnchors(id);NotifyWeb("音频文件已改变，正在重新读取时长，请稍后再试听。");return;}
+   }
+   catch(Exception ex){NotifyWeb("检查音频文件失败："+ex.Message);return;}
+
+   CancelContinuousRandom();
+   _engine.StopActiveTrack();
+   if(!_engine.TryStartPreview(track,start,end))
+   {NotifyWeb("试听无法启动，请检查默认耳机输出和音频文件。");return;}
+   PublishWebState();
+  }
+
+  private void StopAnchorPreview()
+  {
+   PlaybackSnapshot playback=_engine.GetPlaybackSnapshot();
+   if(String.Equals(playback.PlaybackMode,"preview",StringComparison.OrdinalIgnoreCase))_engine.StopActiveTrack();
   }
 
   private void SendAnchorSaveResult(string requestId,string trackId,string sceneId,bool success,string error)
@@ -538,21 +596,36 @@ namespace BgmHotkey
     if(_packBusy&&action!="cancelPack"){NotifyWeb("音效包任务正在执行，完成或取消后再继续。");return;}
     if(action=="painted") { if(!_webPresented) { _webPresented=true; if(_startupTimeout!=null)_startupTimeout.Stop(); _startupSurface.Visible=false; _web.BringToFront(); ShowInTaskbar=true; Opacity=1; BeginInvoke(new MethodInvoker(delegate{ResetStartupWebFocus();})); } return; }
     if(action=="ready") {RefreshWebFiles();InitializeLoudnessNormalization();PublishWebState();return;}
-    if(action=="capture") {_capturingKey=message.ContainsKey("active")&&Convert.ToBoolean(message["active"]);return;}
-    if(action=="play") {TrackDefinition track=TrackCatalog.Find(id);if(track!=null)_engine.ToggleTrack(track,false);}
-    else if(action=="stop")_engine.StopActiveTrack();
+    if(action=="capture") {_capturingKey=(message.ContainsKey("active")&&Convert.ToBoolean(message["active"]))||_songImportState!=null;return;}
+    if(action=="play") {CancelContinuousRandom();TrackDefinition track=TrackCatalog.Find(id);if(track!=null)_engine.ToggleTrack(track,false);}
+    else if(action=="stop") {CancelContinuousRandom();_engine.StopActiveTrack();}
     else if(action=="randomPlay")PlayRandom();
     else if(action=="add") AddSongs(this,EventArgs.Empty);
+    else if(action=="cancelSongImport")CancelSongImport(WebString(message,"operationId"));
+    else if(action=="closeSongImport")CloseSongImport(WebString(message,"operationId"));
     else if(action=="remove") {TrackDefinition track=TrackCatalog.Find(id);if(track!=null)DeleteSong(track);}
     else if(action=="inspectTrack") InspectTrackForAnchors(id);
+    else if(action=="previewAnchors")StartAnchorPreview(message,id);
+    else if(action=="stopPreview")StopAnchorPreview();
     else if(action=="saveAnchors") SavePlaybackAnchors(message,id);
     else if(action=="seek") {
      object rawPosition;double seconds;
      if(message.TryGetValue("positionSeconds",out rawPosition)&&Double.TryParse(Convert.ToString(rawPosition,System.Globalization.CultureInfo.InvariantCulture),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out seconds)) {
       int session,generation;object rawSession,rawGeneration;
       if(!message.TryGetValue("sessionId",out rawSession)||!Int32.TryParse(Convert.ToString(rawSession,System.Globalization.CultureInfo.InvariantCulture),out session)||
-         !message.TryGetValue("generation",out rawGeneration)||!Int32.TryParse(Convert.ToString(rawGeneration,System.Globalization.CultureInfo.InvariantCulture),out generation)||
-         !_engine.Seek(session,generation,seconds))NotifyWeb("播放状态已变化，请松开进度条后重试。");
+         !message.TryGetValue("generation",out rawGeneration)||!Int32.TryParse(Convert.ToString(rawGeneration,System.Globalization.CultureInfo.InvariantCulture),out generation))
+       NotifyWeb("播放状态已变化，请松开进度条后重试。");
+      else if(!_engine.Seek(session,generation,seconds))
+       {CancelContinuousRandom();NotifyWeb("播放状态已变化，请松开进度条后重试。");}
+      else
+      {
+       PlaybackSnapshot seekState=_engine.GetPlaybackSnapshot();
+       if(_continuousRandomActive&&seekState.SessionId==_continuousExpectedSessionId)
+       {
+        if(seekState.State=="stopped")CancelContinuousRandom();
+        else _continuousExpectedGeneration=seekState.Generation;
+       }
+      }
      }
     }
     else if(action=="volume") {
@@ -572,10 +645,23 @@ namespace BgmHotkey
     else if(action=="randomFiles") {
      List<string> selected=new List<string>();object raw;
      if(message.TryGetValue("files",out raw))foreach(object item in (System.Collections.IEnumerable)raw){string file=Convert.ToString(item);if(AppSettings.IsAudioFileName(file)&&Array.Exists(_webFiles,delegate(string f){return String.Equals(f,file,StringComparison.OrdinalIgnoreCase);})&&!selected.Contains(file))selected.Add(file);}
+     CancelContinuousRandom();
      string[] old=_settings.ActiveRandomFiles;_settings.ActiveRandomFiles=selected.ToArray();string error;
      if(!SettingsStore.TrySave(_settings,out error)){_settings.ActiveRandomFiles=old;NotifyWeb("保存失败："+error);}
     }
+    else if(action=="randomMode")
+    {
+     ScenePreset active=_settings.ActiveScene;if(active==null)return;
+     string requested=RandomPlaybackMode.Normalize(WebString(message,"mode"));string oldMode=RandomPlaybackMode.Normalize(active.RandomMode);
+     if(requested!=oldMode)
+     {
+      CancelContinuousRandom();active.RandomMode=requested;string modeError;
+      if(!SettingsStore.TrySave(_settings,out modeError)){active.RandomMode=oldMode;NotifyWeb("保存随机播放模式失败："+modeError);}
+      else NotifyWeb(requested==RandomPlaybackMode.Continuous?"已启用随机连播。再次按随机快捷键或停止按钮可结束。":"已切换为普通随机播放。按一次播放一首，再按停止。");
+     }
+    }
     else if(action=="sceneSwitch") {
+     CancelContinuousRandom();StopAnchorPreview();
      string oldScene=_settings.ActiveSceneId;
      if(!_settings.SetActiveScene(id)){NotifyWeb("找不到这个场景。");return;}
      if(!_engine.StopActiveTrack()) { }
@@ -583,6 +669,7 @@ namespace BgmHotkey
      _webEditorTrackId="";RefreshWebFiles();RebuildBindings();NotifyWeb("已切换场景："+_settings.ActiveScene.Name);
     }
     else if(action=="sceneCreate"||action=="sceneCopy") {
+     CancelContinuousRandom();StopAnchorPreview();
      string name=WebString(message,"name");if(String.IsNullOrWhiteSpace(name))name="新场景";
      ScenePreset created=_settings.CreateScene(name,action=="sceneCopy");
      string previous=_settings.ActiveSceneId;_settings.ActiveSceneId=created.Id;TrackCatalog.Configure(_settings);_engine.StopActiveTrack();
@@ -598,11 +685,11 @@ namespace BgmHotkey
      if((_settings.Scenes??new ScenePreset[0]).Length<=1){NotifyWeb("至少保留一个场景。");return;}
      string previous=_settings.ActiveSceneId;List<ScenePreset> previousScenes=new List<ScenePreset>(_settings.Scenes);
      if(!_settings.DeleteScene(id)){NotifyWeb("找不到要删除的场景。");return;}
-     if(String.Equals(previous,id,StringComparison.OrdinalIgnoreCase))_engine.StopActiveTrack();
+     if(String.Equals(previous,id,StringComparison.OrdinalIgnoreCase)){CancelContinuousRandom();StopAnchorPreview();_engine.StopActiveTrack();}
      string sceneError;if(!SettingsStore.TrySave(_settings,out sceneError)){_settings.Scenes=previousScenes.ToArray();_settings.ActiveSceneId=previous;TrackCatalog.Configure(_settings);NotifyWeb("删除场景失败："+sceneError);return;}
      _webEditorTrackId="";RefreshWebFiles();RebuildBindings();NotifyWeb("场景已删除，音频文件仍保留。");
     }
-    else if(action=="refreshFiles"){RefreshWebFiles();ResetRandomShuffleForRefresh();PublishWebState();}
+    else if(action=="refreshFiles"){CancelContinuousRandom();RefreshWebFiles();ResetRandomShuffleForRefresh();PublishWebState();}
     else if(action=="exportPack")ExportSoundPack();
     else if(action=="importPack")BeginImportSoundPack();
     else if(action=="confirmPackImport")ConfirmSoundPackImport();

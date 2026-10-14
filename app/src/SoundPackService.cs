@@ -16,11 +16,12 @@ namespace BgmHotkey
         public int Version { get; set; }
         public string SceneName { get; set; }
         public string RandomKey { get; set; }
+        public string RandomMode { get; set; }
         public SoundPackAsset[] Assets { get; set; }
         public SoundPackTrack[] Tracks { get; set; }
         public string[] RandomAssetIds { get; set; }
         public SoundPackAnalysis[] Loudness { get; set; }
-        public SoundPackManifest() { Assets = new SoundPackAsset[0]; Tracks = new SoundPackTrack[0]; RandomAssetIds = new string[0]; Loudness = new SoundPackAnalysis[0]; }
+        public SoundPackManifest() { Assets = new SoundPackAsset[0]; Tracks = new SoundPackTrack[0]; RandomAssetIds = new string[0]; Loudness = new SoundPackAnalysis[0]; RandomMode = RandomPlaybackMode.Normal; }
     }
 
     [Serializable]
@@ -124,7 +125,7 @@ namespace BgmHotkey
                 if (scene == null) throw new InvalidOperationException("当前没有可导出的场景。");
                 Dictionary<string, SoundPackAsset> assets = new Dictionary<string, SoundPackAsset>(StringComparer.OrdinalIgnoreCase);
                 Dictionary<string, string> paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                SoundPackManifest manifest = new SoundPackManifest { Version = 1, SceneName = SafeText(scene.Name, 128), RandomKey = scene.RandomKey ?? "" };
+                SoundPackManifest manifest = new SoundPackManifest { Version = 1, SceneName = SafeText(scene.Name, 128), RandomKey = scene.RandomKey ?? "", RandomMode = RandomPlaybackMode.Normalize(scene.RandomMode) };
                 foreach (SavedTrack track in settings.ActiveTracks()) AddExportAsset(settings, manifest, assets, paths, track.Id, track.FileName, track.Name);
                 foreach (string file in scene.RandomFileNames ?? new string[0]) AddExportAsset(settings, manifest, assets, paths, "", file, Path.GetFileNameWithoutExtension(file));
                 if (assets.Count == 0) throw new InvalidOperationException("当前场景没有可导出的音频文件。");
@@ -372,7 +373,7 @@ namespace BgmHotkey
                 }
 
                 ScenePreset scene = new ScenePreset { Id = "scene_" + Guid.NewGuid().ToString("N"), Name = UniqueSceneName(prepared.Manifest.SceneName, existingSceneNames),
-                    RandomKey = prepared.Manifest.RandomKey ?? "", RandomFileNames = new string[0] };
+                    RandomKey = prepared.Manifest.RandomKey ?? "", RandomFileNames = new string[0], RandomMode = RandomPlaybackMode.Normalize(prepared.Manifest.RandomMode) };
                 List<SceneTrack> sceneTracks = new List<SceneTrack>();
                 List<TrackBinding> bindings = new List<TrackBinding>();
                 foreach (SoundPackTrack track in prepared.Manifest.Tracks)
@@ -504,6 +505,7 @@ namespace BgmHotkey
                 { track.EndSeconds = null; warnings.Add("有结束锚点无效，已改为播放到结尾。"); }
             }
             manifest.RandomKey = AppSettings.NormalizeKey(manifest.RandomKey);
+            manifest.RandomMode = RandomPlaybackMode.Normalize(manifest.RandomMode);
             if (manifest.RandomKey.Length > 0 && keys.Contains(manifest.RandomKey)) { manifest.RandomKey = ""; warnings.Add("随机快捷键与歌曲快捷键冲突，已清空随机快捷键。"); }
         }
 

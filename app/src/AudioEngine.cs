@@ -4,6 +4,30 @@ using System.Threading;
 
 namespace BgmHotkey
 {
+    internal enum PlaybackEndReason
+    {
+        Natural,
+        Failed
+    }
+
+    internal sealed class PlaybackCompletedEventArgs : EventArgs
+    {
+        public readonly int SessionId;
+        public readonly int Generation;
+        public readonly string TrackId;
+        public readonly string PlaybackMode;
+        public readonly PlaybackEndReason Reason;
+
+        public PlaybackCompletedEventArgs(int sessionId, int generation, string trackId, string playbackMode, PlaybackEndReason reason)
+        {
+            SessionId = sessionId;
+            Generation = generation;
+            TrackId = trackId ?? "";
+            PlaybackMode = playbackMode ?? "normal";
+            Reason = reason;
+        }
+    }
+
     internal struct AudioPlaybackRange
     {
         public double StartSeconds;
@@ -24,6 +48,7 @@ namespace BgmHotkey
         public double? EndSeconds;
         public string Error;
         public bool CanSeek;
+        public string PlaybackMode;
     }
 
     internal sealed class AudioEngine : IDisposable
@@ -48,6 +73,7 @@ namespace BgmHotkey
         private bool _loading;
         private bool _seeking;
         private bool _directHeadphonePlayback;
+        private string _playbackMode = "normal";
         private double _currentTrackGain = 1.0;
         private readonly FinalMixLimiter _finalMixLimiter = new FinalMixLimiter();
         private Mp3StreamPlayer _streamPlayer;
@@ -92,6 +118,7 @@ namespace BgmHotkey
         public int[] MusicSpectrum { get { return (int[])_musicSpectrum.Clone(); } }
 
         public event EventHandler StatusChanged;
+        public event EventHandler<PlaybackCompletedEventArgs> PlaybackCompleted;
         public string PlaybackSummary
         {
             get { lock (_stateGate) return _playing ? _playingName : (_loading ? (_seeking ? "正在跳转…" : "准备播放…") : "等待播放"); }
@@ -248,21 +275,41 @@ namespace BgmHotkey
             if (stopCurrent) { StopActiveTrack(); return; }
 
             AudioPlaybackRange playbackRange = ResolvePlaybackRange(track, useShortcutRange);
-            double startSeconds = playbackRange.StartSeconds;
-            double? endSeconds = playbackRange.EndSeconds;
+            TryStartTrack(track, playbackRange.StartSeconds, playbackRange.EndSeconds, false);
+        }
+
+        public bool TryStartFullTrack(TrackDefinition track)
+        {
+            if (track == null) return false;
+            return TryStartTrack(track, 0, null, false);
+        }
+
+        public bool TryStartPreview(TrackDefinition track, double startSeconds, double? endSeconds)
+        {
+            if (track == null || Double.IsNaN(startSeconds) || Double.IsInfinity(startSeconds) || startSeconds < 0 ||
+                endSeconds.HasValue && (Double.IsNaN(endSeconds.Value) || Double.IsInfinity(endSeconds.Value) || endSeconds.Value <= startSeconds)) return false;
+            lock (_stateGate)
+                if (_playing || _loading) return false;
+            return TryStartTrack(track, startSeconds, endSeconds, true);
+        }
+
+        private bool TryStartTrack(TrackDefinition track, double startSeconds, double? endSeconds, bool preview)
+        {
             bool isMp3 = track.FileName.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
-            if (!isMp3 || startSeconds > 0 || endSeconds.HasValue)
+            if (preview || !isMp3 || startSeconds > 0 || endSeconds.HasValue)
             {
                 try { EnsureHeadphoneSink(); }
-                catch (Exception ex) { SetPlaybackError("无法打开耳机输出：" + ex.Message); return; }
+                catch (Exception ex) { SetPlaybackError("无法打开耳机输出：" + ex.Message); return false; }
             }
 
             string filePath = AppPaths.TrackPath(track.FileName);
-            Mp3StreamPlayer playerToStart = new Mp3StreamPlayer(filePath, startSeconds, endSeconds);
+            Mp3StreamPlayer playerToStart;
+            try { playerToStart = new Mp3StreamPlayer(filePath, startSeconds, endSeconds); }
+            catch (Exception ex) { SetPlaybackError("无法读取音频：" + ex.Message); return false; }
             int sessionId;
             lock (_stateGate)
             {
-                if (_playing || _loading) { playerToStart.Dispose(); return; }
+                if (_playing || _loading) { playerToStart.Dispose(); return false; }
                 _streamPlayer = playerToStart;
                 _directPlayer = null;
                 _playingName = track.Name;
@@ -281,6 +328,7 @@ namespace BgmHotkey
                 _segmentEndSeconds = endSeconds;
                 _playbackError = "";
                 _directHeadphonePlayback = false;
+                _playbackMode = preview ? "preview" : "normal";
                 _loading = true;
                 _seeking = false;
                 _playing = false;
@@ -290,7 +338,8 @@ namespace BgmHotkey
             try
             {
                 playerToStart.Start();
-                ThreadPool.QueueUserWorkItem(delegate { CompleteTrackStart(playerToStart, track, sessionId, isMp3, startSeconds, endSeconds); });
+                ThreadPool.QueueUserWorkItem(delegate { CompleteTrackStart(playerToStart, track, sessionId, isMp3, startSeconds, endSeconds, preview); });
+                return true;
             }
             catch (Exception ex)
             {
@@ -305,10 +354,12 @@ namespace BgmHotkey
                         _sessionId = ++_nextSessionId;
                         _playbackError = "启动失败：" + ex.Message;
                         _playbackStatus = _playbackError;
+                        _playbackMode = "normal";
                     }
                 }
             }
             NotifyStatus();
+            return false;
         }
 
         private void EnsureHeadphoneSink()
@@ -320,7 +371,7 @@ namespace BgmHotkey
                 if (_headphones == null) _headphones = new WaveOutSink(WinMm.Mapper, "Windows 默认播放设备");
         }
 
-        private void CompleteTrackStart(Mp3StreamPlayer player, TrackDefinition track, int sessionId, bool isMp3, double startSeconds, double? endSeconds)
+        private void CompleteTrackStart(Mp3StreamPlayer player, TrackDefinition track, int sessionId, bool isMp3, double startSeconds, double? endSeconds, bool preview)
         {
             DirectMp3Player direct = null;
             try
@@ -335,7 +386,7 @@ namespace BgmHotkey
                 int volume;
                 lock (_stateGate) volume = _headphoneVolume;
                 bool directHeadphonePlayback = false;
-                if (isMp3 && startSeconds <= 0 && !endSeconds.HasValue)
+                if (!preview && isMp3 && startSeconds <= 0 && !endSeconds.HasValue)
                 {
                     try
                     {
@@ -364,7 +415,9 @@ namespace BgmHotkey
                     _seeking = false;
                     _playing = true;
                     _playbackError = "";
-                    _playbackStatus = isMp3
+                    _playbackStatus = preview
+                        ? "正在试听（仅耳机） ：" + track.Name
+                        : isMp3
                         ? "正在播放：" + track.Name + (directHeadphonePlayback ? "（耳机原生 MP3；CABLE 独立混音）" : "（MP3 同步流式输出到耳机与 CABLE）")
                         : "正在播放：" + track.Name + "（流式音频；耳机与 CABLE 独立音量）";
                     Interlocked.Exchange(ref _resetOutputPending, 1);
@@ -378,14 +431,22 @@ namespace BgmHotkey
                 {
                     if (_streamPlayer == player && _sessionId == sessionId)
                     {
+                        int failedGeneration = _seekGeneration;
+                        string failedTrackId = _playingTrackId;
+                        string failedMode = _playbackMode;
                         _streamPlayer = null;
                         _directPlayer = null;
                         _loading = false;
                         _seeking = false;
                         _playing = false;
                         _directHeadphonePlayback = false;
+                        _playbackMode = "normal";
                         _playbackError = "启动失败：" + ex.Message;
                         _playbackStatus = _playbackError;
+                        ThreadPool.QueueUserWorkItem(delegate
+                        {
+                            NotifyPlaybackCompleted(new PlaybackCompletedEventArgs(sessionId, failedGeneration, failedTrackId, failedMode, PlaybackEndReason.Failed));
+                        });
                     }
                 }
                 ThreadPool.QueueUserWorkItem(delegate { player.Dispose(); });
@@ -415,6 +476,7 @@ namespace BgmHotkey
                 _playingTrackId = "";
                 _playingFileName = "";
                 _directHeadphonePlayback = false;
+                _playbackMode = "normal";
                 _currentTrackGain = 1.0;
                 _sessionId = ++_nextSessionId;
                 _seekGeneration++;
@@ -444,7 +506,8 @@ namespace BgmHotkey
                 snapshot.StartSeconds = _segmentStartSeconds;
                 snapshot.EndSeconds = _segmentEndSeconds;
                 snapshot.Error = _playbackError;
-                snapshot.CanSeek = _playing && _lastDurationSeconds > 0;
+                snapshot.PlaybackMode = _playbackMode;
+                snapshot.CanSeek = _playing && _lastDurationSeconds > 0 && !String.Equals(_playbackMode, "preview", StringComparison.OrdinalIgnoreCase);
                 stream = _streamPlayer;
                 direct = _directPlayer;
             }
@@ -458,7 +521,8 @@ namespace BgmHotkey
                 lock (_stateGate)
                     if (_sessionId == snapshot.SessionId) _lastPositionSeconds = snapshot.PositionSeconds;
             }
-            snapshot.CanSeek = snapshot.State == "playing" && snapshot.DurationSeconds > 0;
+            snapshot.CanSeek = snapshot.State == "playing" && snapshot.DurationSeconds > 0 &&
+                !String.Equals(snapshot.PlaybackMode, "preview", StringComparison.OrdinalIgnoreCase);
             return snapshot;
         }
 
@@ -623,6 +687,7 @@ namespace BgmHotkey
         private void AudioLoop()
         {
             short[] music = new short[WinMm.BlockFrames * 2];
+            short[] cableMusic = new short[WinMm.BlockFrames * 2];
             short[] microphone = new short[WinMm.BlockFrames * 2];
             short[] cableSamples = new short[WinMm.BlockFrames * 2];
 
@@ -685,14 +750,23 @@ namespace BgmHotkey
                     int cableVolume;
                     int headphoneVolume;
                     bool streamToHeadphones;
+                    bool routeMusicToCable;
+                    string playbackMode;
                     lock (_stateGate)
                     {
                         cableVolume = _cableVolume;
                         headphoneVolume = _headphoneVolume;
                         streamToHeadphones = _playing && !_directHeadphonePlayback;
+                        playbackMode = _playbackMode;
+                        routeMusicToCable = _playing && _sessionId == musicSessionId && _seekGeneration == musicGeneration &&
+                            !String.Equals(_playbackMode, "preview", StringComparison.OrdinalIgnoreCase);
                     }
+                    if (routeMusicToCable) Array.Copy(music, cableMusic, music.Length);
+                    else Array.Clear(cableMusic, 0, cableMusic.Length);
 
-                    UpdateMusicSpectrum(music, Math.Max(cableVolume, headphoneVolume) / 100.0 * MaximumMusicGain * activeTrackGain);
+                    int spectrumVolume = String.Equals(playbackMode, "preview", StringComparison.OrdinalIgnoreCase)
+                        ? headphoneVolume : Math.Max(cableVolume, headphoneVolume);
+                    UpdateMusicSpectrum(music, spectrumVolume / 100.0 * MaximumMusicGain * activeTrackGain);
 
                     // Expose the music source peak after each route's configured gain.
                     // This observes the decoded stream without changing either output route.
@@ -702,7 +776,7 @@ namespace BgmHotkey
                     if (_cable != null)
                     {
                         int cableMusicPeak;
-                        _finalMixLimiter.Mix(music, microphone, cableSamples, cableVolume, activeTrackGain, out cableMusicPeak);
+                        _finalMixLimiter.Mix(cableMusic, microphone, cableSamples, cableVolume, activeTrackGain, out cableMusicPeak);
                         _microphonePeak = Peak(microphone);
                         _musicPeak = cableMusicPeak;
                         try
@@ -879,10 +953,13 @@ namespace BgmHotkey
                 Exception error = player.Error;
                 bool ended = false;
                 DirectMp3Player direct = null;
+                PlaybackCompletedEventArgs completed = null;
                 lock (_stateGate)
                 {
                     if (_streamPlayer == player && _sessionId == sessionId && _seekGeneration == generation)
                     {
+                        string completedTrackId = _playingTrackId;
+                        string completedMode = _playbackMode;
                         _streamPlayer = null;
                         direct = _directPlayer;
                         _directPlayer = null;
@@ -898,9 +975,12 @@ namespace BgmHotkey
                         _playingFileName = "";
                         _currentTrackGain = 1.0;
                         _directHeadphonePlayback = false;
+                        _playbackMode = "normal";
                         _playbackError = error == null ? "" : error.Message;
                         _playbackStatus = error == null ? "播放结束" : "播放失败：" + error.Message;
                         ended = true;
+                        completed = new PlaybackCompletedEventArgs(sessionId, generation, completedTrackId, completedMode,
+                            error == null ? PlaybackEndReason.Natural : PlaybackEndReason.Failed);
                     }
                 }
                 if (ended)
@@ -909,6 +989,7 @@ namespace BgmHotkey
                         direct.Dispose();
                     player.Dispose();
                     NotifyStatusLater();
+                    NotifyPlaybackCompletedLater(completed);
                 }
             }
         }
@@ -960,6 +1041,19 @@ namespace BgmHotkey
         private void NotifyStatusLater()
         {
             ThreadPool.QueueUserWorkItem(delegate { NotifyStatus(); });
+        }
+
+        private void NotifyPlaybackCompletedLater(PlaybackCompletedEventArgs args)
+        {
+            if (args == null) return;
+            ThreadPool.QueueUserWorkItem(delegate { NotifyPlaybackCompleted(args); });
+        }
+
+        private void NotifyPlaybackCompleted(PlaybackCompletedEventArgs args)
+        {
+            EventHandler<PlaybackCompletedEventArgs> handler = PlaybackCompleted;
+            if (handler != null)
+                try { handler(this, args); } catch { }
         }
 
         private void NotifyStatus()

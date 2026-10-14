@@ -12,8 +12,8 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: TargetFramework(".NETFramework,Version=v4.8")]
-[assembly: AssemblyVersion("1.9.6.0")]
-[assembly: AssemblyFileVersion("1.9.6.0")]
+[assembly: AssemblyVersion("1.9.7.0")]
+[assembly: AssemblyFileVersion("1.9.7.0")]
 [assembly: AssemblyTitle("Wanxiang BGM Player Installer")]
 
 internal static class Installer
@@ -271,11 +271,12 @@ internal static class Installer
         WriteResource("IconLicense", Path.Combine(Folder, "Tabler-LICENSE.txt"));
         WriteResource("WebLicense", Path.Combine(Folder, "WebView2-LICENSE.txt"));
         WriteResource("WebNotice", Path.Combine(Folder, "WebView2-NOTICE.txt"));
+        WriteResource("MusicConverterNotice", Path.Combine(Folder, "MusicConverter-NOTICES.txt"));
         WriteResource("WebCore", Path.Combine(Folder, "Microsoft.Web.WebView2.Core.dll"));
         WriteResource("WebForms", Path.Combine(Folder, "Microsoft.Web.WebView2.WinForms.dll"));
         WriteResource(Environment.Is64BitOperatingSystem ? "WebLoader64" : "WebLoader32", Path.Combine(Folder, "WebView2Loader.dll"));
         WriteResource("Config", Path.Combine(Folder, "BgmHotkey.exe.config"));
-        WriteResource("Guide", Path.Combine(Folder, "使用说明.txt"));
+        WriteResource("Guide", Path.Combine(Folder, "Installation Guide.txt"));
         WriteResource("Uninstaller", Path.Combine(Folder, "Uninstall.exe"));
         WriteResource("Config", Path.Combine(Folder, "Uninstall.exe.config"));
         Directory.CreateDirectory(MenuFolder);
@@ -286,7 +287,7 @@ internal static class Installer
         using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath))
         {
             key.SetValue("DisplayName", "万象 BGM 播放器");
-            key.SetValue("DisplayVersion", "1.9.6");
+            key.SetValue("DisplayVersion", "1.9.7");
             key.SetValue("InstallLocation", Folder);
             key.SetValue("DisplayIcon", Path.Combine(Folder, "BgmHotkey.exe"));
             key.SetValue("UninstallString", "\"" + Path.Combine(Folder, "Uninstall.exe") + "\" /uninstall");
@@ -340,7 +341,7 @@ internal static class Installer
     internal static void RemoveFiles()
     {
         CheckNotRunning();
-        foreach (string file in new string[] { "Tabler-LICENSE.txt", "WebView2-LICENSE.txt", "WebView2-NOTICE.txt", "Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.WinForms.dll", "WebView2Loader.dll", "BgmHotkey.exe", "BgmHotkey.exe.config", "使用说明.txt", "Uninstall.exe", "Uninstall.exe.config" })
+        foreach (string file in new string[] { "Tabler-LICENSE.txt", "WebView2-LICENSE.txt", "WebView2-NOTICE.txt", "MusicConverter-NOTICES.txt", "Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.WinForms.dll", "WebView2Loader.dll", "BgmHotkey.exe", "BgmHotkey.exe.config", "Installation Guide.txt", "Uninstall.exe", "Uninstall.exe.config" })
             File.Delete(Path.Combine(Folder, file));
         foreach (string file in new string[] { "万象 BGM 播放器.lnk", "卸载万象 BGM 播放器.lnk" }) File.Delete(Path.Combine(MenuFolder, file));
         File.Delete(Path.Combine(DesktopFolder, "万象 BGM 播放器.lnk"));

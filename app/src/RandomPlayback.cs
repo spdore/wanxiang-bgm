@@ -11,25 +11,173 @@ namespace BgmHotkey
         private readonly RandomShuffleBag _shuffleBag = new RandomShuffleBag();
         private string _lastRandomSceneId = "";
         private string _lastRandomFileName = "";
+        private bool _continuousRandomActive;
+        private int _continuousRandomToken;
+        private int _continuousExpectedSessionId;
+        private int _continuousExpectedGeneration;
+        private string _continuousSceneId = "";
+        private string _continuousCurrentFile = "";
+        private int _continuousSkippedCount;
 
         private void PlayRandom()
         {
+            if (_continuousRandomActive)
+            {
+                CancelContinuousRandom();
+                _engine.StopActiveTrack();
+                NotifyWeb("已停止随机连播。");
+                PublishWebState();
+                return;
+            }
             if (_engine.StopActiveTrack()) return;
-            string sceneId = _settings.ActiveSceneId;
+
+            ScenePreset scene = _settings.ActiveScene;
+            if (scene != null && RandomPlaybackMode.Normalize(scene.RandomMode) == RandomPlaybackMode.Continuous)
+            {
+                StartContinuousRandom();
+                return;
+            }
+            PlaySingleRandom();
+        }
+
+        private List<string> AvailableRandomFiles()
+        {
             List<string> available = new List<string>();
             foreach (string file in _settings.ActiveRandomFiles ?? new string[0])
                 if (AppSettings.IsAudioFileName(file) && File.Exists(AppPaths.TrackPath(file))) available.Add(file);
+            return available;
+        }
+
+        private void PlaySingleRandom()
+        {
+            string sceneId = _settings.ActiveSceneId;
+            List<string> available = AvailableRandomFiles();
             string selected = _shuffleBag.Next(sceneId, available);
             if (selected == null)
             {
-                ShowLibraryNotice("随机曲库没有可播放歌曲，请打开“随机播放设置”勾选歌曲。", true);
+                NotifyWeb("当前场景没有可播放的随机候选，请在随机播放页选择音频文件。");
                 return;
             }
             LoudnessAnalysis analysis = _settings.FindAnalysis(selected);
             double gain = analysis == null ? 0 : analysis.GainDb;
             _lastRandomSceneId = sceneId;
             _lastRandomFileName = selected;
-            _engine.ToggleTrack(new TrackDefinition("random_file:" + selected, Path.GetFileNameWithoutExtension(selected), selected, 0, null, gain), false);
+            if (!_engine.TryStartFullTrack(new TrackDefinition("random_file:" + selected, Path.GetFileNameWithoutExtension(selected), selected, 0, null, gain)))
+            {
+                _shuffleBag.MarkFailed(sceneId, selected);
+                _lastRandomFileName = "";
+                NotifyWeb("无法启动这首随机候选，请检查音频文件或解码器。");
+            }
+        }
+
+        private void StartContinuousRandom()
+        {
+            List<string> available = AvailableRandomFiles();
+            if (available.Count == 0)
+            {
+                NotifyWeb("当前场景没有可播放的随机候选，请在随机播放页选择音频文件。");
+                return;
+            }
+            _continuousRandomToken++;
+            _continuousRandomActive = true;
+            _continuousSceneId = _settings.ActiveSceneId;
+            _continuousCurrentFile = "";
+            _continuousSkippedCount = 0;
+            _continuousExpectedSessionId = 0;
+            _continuousExpectedGeneration = 0;
+            _shuffleBag.Refresh(_continuousSceneId);
+            StartNextContinuousTrack(_continuousRandomToken);
+            PublishWebState();
+        }
+
+        private void StartNextContinuousTrack(int runToken)
+        {
+            if (!_continuousRandomActive || runToken != _continuousRandomToken ||
+                !String.Equals(_settings.ActiveSceneId, _continuousSceneId, StringComparison.OrdinalIgnoreCase)) return;
+
+            List<string> available = AvailableRandomFiles();
+            int attempts = available.Count;
+            while (attempts-- > 0)
+            {
+                string selected = _shuffleBag.Next(_continuousSceneId, available);
+                if (String.IsNullOrWhiteSpace(selected)) break;
+                if (!File.Exists(AppPaths.TrackPath(selected)))
+                {
+                    _shuffleBag.MarkFailed(_continuousSceneId, selected);
+                    _continuousSkippedCount++;
+                    continue;
+                }
+                LoudnessAnalysis analysis = _settings.FindAnalysis(selected);
+                double gain = analysis == null ? 0 : analysis.GainDb;
+                TrackDefinition candidate = new TrackDefinition("random_file:" + selected, Path.GetFileNameWithoutExtension(selected), selected, 0, null, gain);
+                _lastRandomSceneId = _continuousSceneId;
+                _lastRandomFileName = selected;
+                if (!_engine.TryStartFullTrack(candidate))
+                {
+                    _shuffleBag.MarkFailed(_continuousSceneId, selected);
+                    _continuousSkippedCount++;
+                    _lastRandomFileName = "";
+                    continue;
+                }
+                PlaybackSnapshot playback = _engine.GetPlaybackSnapshot();
+                _continuousCurrentFile = selected;
+                _continuousExpectedSessionId = playback.SessionId;
+                _continuousExpectedGeneration = playback.Generation;
+                PublishWebState();
+                if (_continuousSkippedCount > 0)
+                {
+                    NotifyWeb("已跳过 " + _continuousSkippedCount + " 首无法读取或启动的随机候选，继续连播。");
+                    _continuousSkippedCount = 0;
+                }
+                return;
+            }
+
+            bool allCandidatesFailed = available.Count > 0;
+            CancelContinuousRandom();
+            NotifyWeb(allCandidatesFailed
+                ? "当前场景的随机候选均无法播放，已结束连播。"
+                : "当前场景没有可播放的随机候选，已结束连播。");
+            PublishWebState();
+        }
+
+        private void CancelContinuousRandom()
+        {
+            _continuousRandomToken++;
+            _continuousRandomActive = false;
+            _continuousExpectedSessionId = 0;
+            _continuousExpectedGeneration = 0;
+            _continuousSceneId = "";
+            _continuousCurrentFile = "";
+        }
+
+        private void EnginePlaybackCompleted(object sender, PlaybackCompletedEventArgs e)
+        {
+            if (e == null || IsDisposed || !IsHandleCreated) return;
+            try
+            {
+                BeginInvoke(new MethodInvoker(delegate { HandleContinuousPlaybackCompleted(e); }));
+            }
+            catch (InvalidOperationException) { }
+        }
+
+        private void HandleContinuousPlaybackCompleted(PlaybackCompletedEventArgs e)
+        {
+            if (IsDisposed || !_continuousRandomActive || e == null || e.PlaybackMode == "preview" ||
+                e.SessionId != _continuousExpectedSessionId || e.Generation != _continuousExpectedGeneration ||
+                !String.Equals(e.TrackId, "random_file:" + _continuousCurrentFile, StringComparison.OrdinalIgnoreCase) ||
+                !String.Equals(_settings.ActiveSceneId, _continuousSceneId, StringComparison.OrdinalIgnoreCase)) return;
+
+            PlaybackSnapshot current = _engine.GetPlaybackSnapshot();
+            if (current.SessionId != e.SessionId || current.Generation != e.Generation || current.State != "stopped") return;
+            string completedFile = _continuousCurrentFile;
+            if (e.Reason == PlaybackEndReason.Failed)
+            {
+                _shuffleBag.MarkFailed(_continuousSceneId, completedFile);
+                _continuousSkippedCount++;
+                AppPaths.Log("随机连播跳过无法解码的候选文件：" + completedFile);
+            }
+            _continuousCurrentFile = "";
+            StartNextContinuousTrack(_continuousRandomToken);
         }
 
         private void ResetRandomShuffleForRefresh()
@@ -40,11 +188,23 @@ namespace BgmHotkey
         private void MarkFailedRandomPlayback()
         {
             PlaybackSnapshot snapshot = _engine.GetPlaybackSnapshot();
+            if (_continuousRandomActive)
+            {
+                if (snapshot.SessionId != _continuousExpectedSessionId && !String.IsNullOrWhiteSpace(snapshot.Error))
+                {
+                    CancelContinuousRandom();
+                    NotifyWeb("当前连播会话已因播放或跳转错误结束。");
+                    PublishWebState();
+                }
+                return;
+            }
             if (!String.IsNullOrWhiteSpace(snapshot.Error) && !String.IsNullOrWhiteSpace(_lastRandomFileName) &&
                 String.Equals(snapshot.TrackId, "random_file:" + _lastRandomFileName, StringComparison.OrdinalIgnoreCase))
             {
+                string failedFile = _lastRandomFileName;
                 _shuffleBag.MarkFailed(_lastRandomSceneId, _lastRandomFileName);
                 _lastRandomFileName = "";
+                NotifyWeb("随机候选“" + Path.GetFileNameWithoutExtension(failedFile) + "”无法播放，已停止。请检查文件或系统解码器。");
             }
         }
 

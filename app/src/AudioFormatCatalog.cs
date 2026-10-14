@@ -15,7 +15,7 @@ namespace BgmHotkey
         {
             get
             {
-                return "音频候选文件（导入时检查编码）|*.mp3;*.wav;*.m4a;*.aac;*.wma;*.flac;*.ogg;*.opus;*.aif;*.aiff|所有文件|*.*";
+                return "音频与本地加密音乐|*.mp3;*.wav;*.m4a;*.aac;*.wma;*.flac;*.ogg;*.opus;*.aif;*.aiff;*.ncm;*.mflac;*.mflac0;*.mgg;*.mgg0;*.mgg1;*.mggl;*.mmp4;*.qmc*;*.tkm;*.bkc*;*.kgm;*.kgma;*.vpr;*.kgm.flac;*.vpr.flac|所有文件|*.*";
             }
         }
 
@@ -51,6 +51,32 @@ namespace BgmHotkey
                 if (reader.ReadFrames(firstBlock, WinMm.BlockFrames) <= 0)
                     throw new InvalidOperationException("音频没有可播放的内容，或当前系统没有此格式的解码器。");
                 return reader.DurationSeconds;
+            }
+        }
+
+        public static double ValidateCompleteAudio(string path, Func<bool> cancelRequested)
+        {
+            if (!File.Exists(path)) throw new FileNotFoundException("找不到音频文件。", path);
+            if (!IsSupportedExtension(path)) throw new InvalidOperationException("转换结果扩展名不是标准音频格式。");
+            using (Mp3Decoder.StreamingReader reader = new Mp3Decoder.StreamingReader(path, 0, null, cancelRequested))
+            {
+                double duration = reader.DurationSeconds;
+                if (duration <= 0 || Double.IsNaN(duration) || Double.IsInfinity(duration))
+                    throw new InvalidOperationException("系统没有提供有效音频时长。");
+                short[] block = new short[WinMm.BlockFrames * WinMm.OutputChannels];
+                long decodedFrames = 0;
+                int frames;
+                while ((frames = reader.ReadFrames(block, WinMm.BlockFrames)) > 0)
+                {
+                    if (cancelRequested != null && cancelRequested()) throw new OperationCanceledException("音频验证已取消。");
+                    decodedFrames += frames;
+                }
+                if (decodedFrames <= 0) throw new InvalidOperationException("系统没有解码出音频内容。");
+                double decodedDuration = decodedFrames / (double)WinMm.SampleRate;
+                double tolerance = Math.Max(1.0, duration * 0.03);
+                if (Math.Abs(decodedDuration - duration) > tolerance)
+                    throw new InvalidOperationException("完整解码帧数与容器报告时长不一致，文件可能已截断。");
+                return duration;
             }
         }
     }

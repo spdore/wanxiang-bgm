@@ -1,8 +1,12 @@
-param([string]$OutputName = 'WanxiangBgmSetup-1.9.6.exe')
+param(
+    [string]$OutputName = 'WanxiangBgmSetup-1.9.7.exe',
+    [string]$PythonPath = '',
+    [string]$PythonDependencyPath = ''
+)
 
 $ErrorActionPreference = 'Stop'
-$GuideName = 'INSTALLATION-1.9.6.txt'
-$Version = '1.9.6'
+$GuideName = 'INSTALLATION-1.9.7.txt'
+$Version = '1.9.7'
 if ([System.IO.Path]::GetFileName($OutputName) -ne $OutputName -or [System.IO.Path]::GetExtension($OutputName) -ne '.exe') {
     throw 'OutputName must be a .exe file name without a path.'
 }
@@ -15,16 +19,27 @@ New-Item -ItemType Directory -Path $taskBuildRoot,$taskBuild,$taskOutput -Force 
 $taskPlayer = Join-Path $taskBuild 'BgmHotkey.exe'
 $taskSetup = Join-Path $taskOutput $OutputName
 if (Test-Path -LiteralPath $taskSetup) { throw "Refusing to overwrite existing installer: $taskSetup" }
+$taskHelperArchive = Join-Path $taskBuild 'encrypted-audio-helper.zip'
+$taskHelperBuilder = Join-Path $taskRoot 'tools\build-encrypted-audio-helper.ps1'
+$taskHelperArguments = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$taskHelperBuilder,'-OutputArchive',$taskHelperArchive)
+if (-not [String]::IsNullOrWhiteSpace($PythonPath)) { $taskHelperArguments += @('-PythonPath',$PythonPath) }
+if (-not [String]::IsNullOrWhiteSpace($PythonDependencyPath)) { $taskHelperArguments += @('-DependencyPath',$PythonDependencyPath) }
+& powershell.exe @taskHelperArguments
+if ($LASTEXITCODE -ne 0) { throw 'Encrypted-audio helper build failed.' }
 $taskSource = @(Get-ChildItem -LiteralPath (Join-Path $taskRoot 'app\src') -Filter *.cs | ForEach-Object FullName)
+$taskConverterNotice = Join-Path $taskRoot 'licenses\MusicConverter-NOTICES.txt'
+if (-not (Test-Path -LiteralPath $taskConverterNotice -PathType Leaf)) { throw 'Missing converter third-party notices.' }
 $taskReferences = @('/r:System.dll','/r:System.Core.dll','/r:System.Drawing.dll','/r:System.Windows.Forms.dll','/r:System.Xml.dll','/r:System.IO.Compression.dll','/r:System.IO.Compression.FileSystem.dll')
 $taskCommon = @('/nologo','/langversion:5','/codepage:65001','/target:winexe','/platform:anycpu','/optimize+',('/win32manifest:' + (Join-Path $taskRoot 'app\app.manifest')),('/win32icon:' + (Join-Path $taskRoot 'app\assets\BgmHotkey.ico')))
 $taskX64Common = @('/nologo','/langversion:5','/codepage:65001','/target:winexe','/platform:x64','/optimize+',('/win32manifest:' + (Join-Path $taskRoot 'app\app.manifest')),('/win32icon:' + (Join-Path $taskRoot 'app\assets\BgmHotkey.ico')))
 $taskSdk = Join-Path $taskRoot 'vendor\webview2\sdk\net462'
 $taskWebReferences = @('/r:System.Web.Extensions.dll', "/r:$(Join-Path $taskSdk 'Microsoft.Web.WebView2.Core.dll')", "/r:$(Join-Path $taskSdk 'Microsoft.Web.WebView2.WinForms.dll')", "/resource:$(Join-Path $taskRoot 'app\ui\index.html'),Interface")
+$taskWebReferences += "/resource:$taskHelperArchive,CryptoHelperArchive"
+$taskWebReferences += "/resource:$taskConverterNotice,MusicConverterNotice"
 & $taskCompiler @taskX64Common @taskReferences @taskWebReferences /define:PUBLIC_RELEASE "/out:$taskPlayer" @taskSource
 if ($LASTEXITCODE -ne 0) { throw 'Player compilation failed.' }
 $taskConfig = Join-Path $taskRoot 'app\app.config'
-$taskGuide = Join-Path $PSScriptRoot 'installation-guide.zh-CN.txt'
+$taskGuide = Join-Path $PSScriptRoot 'installation-guide.en.txt'
 $taskInstallerSource = Join-Path $PSScriptRoot 'Installer.cs'
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'The share installer targets 64-bit Windows.' }
 $taskDriver = Join-Path $taskBuild 'VB-CABLE.zip'
@@ -50,7 +65,7 @@ if ($taskBootstrapperSignature.Status -ne 'Valid' -or $taskBootstrapperSignature
 $taskUninstaller = Join-Path $taskBuild 'Uninstaller.exe'
 & $taskCompiler @taskCommon @taskReferences /define:UNINSTALLER_ONLY /main:Installer "/out:$taskUninstaller" $taskInstallerSource
 if ($LASTEXITCODE -ne 0) { throw 'Uninstaller compilation failed.' }
-$taskWebResources = @("/resource:$(Join-Path $taskRoot 'licenses\Tabler-LICENSE.txt'),IconLicense", "/resource:$(Join-Path $taskRoot 'licenses\WebView2-LICENSE.txt'),WebLicense", "/resource:$(Join-Path $taskRoot 'licenses\WebView2-NOTICE.txt'),WebNotice", "/resource:$(Join-Path $taskSdk 'Microsoft.Web.WebView2.Core.dll'),WebCore", "/resource:$(Join-Path $taskSdk 'Microsoft.Web.WebView2.WinForms.dll'),WebForms", "/resource:$(Join-Path $taskRoot 'vendor\webview2\loader\win-x64\WebView2Loader.dll'),WebLoader64", "/resource:$(Join-Path $taskRoot 'vendor\webview2\loader\win-x86\WebView2Loader.dll'),WebLoader32", "/resource:$taskBootstrapper,WebBootstrapper", "/resource:$taskUninstaller,Uninstaller")
+$taskWebResources = @("/resource:$(Join-Path $taskRoot 'licenses\Tabler-LICENSE.txt'),IconLicense", "/resource:$(Join-Path $taskRoot 'licenses\WebView2-LICENSE.txt'),WebLicense", "/resource:$(Join-Path $taskRoot 'licenses\WebView2-NOTICE.txt'),WebNotice", "/resource:$(Join-Path $taskRoot 'licenses\MusicConverter-NOTICES.txt'),MusicConverterNotice", "/resource:$(Join-Path $taskSdk 'Microsoft.Web.WebView2.Core.dll'),WebCore", "/resource:$(Join-Path $taskSdk 'Microsoft.Web.WebView2.WinForms.dll'),WebForms", "/resource:$(Join-Path $taskRoot 'vendor\webview2\loader\win-x64\WebView2Loader.dll'),WebLoader64", "/resource:$(Join-Path $taskRoot 'vendor\webview2\loader\win-x86\WebView2Loader.dll'),WebLoader32", "/resource:$taskBootstrapper,WebBootstrapper", "/resource:$taskUninstaller,Uninstaller")
 & $taskCompiler @taskCommon @taskReferences @taskWebResources /main:Installer "/out:$taskSetup" "/resource:$taskPlayer,Player" "/resource:$taskConfig,Config" "/resource:$taskGuide,Guide" "/resource:$taskDriver,Driver" $taskInstallerSource
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 Copy-Item -LiteralPath $taskGuide -Destination (Join-Path $taskOutput $GuideName)

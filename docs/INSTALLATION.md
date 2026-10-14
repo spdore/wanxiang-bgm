@@ -2,6 +2,8 @@
 
 ## End users
 
+The repository's current source is version 1.9.7. Until a 1.9.7 GitHub installer release is published, the latest downloadable installer is version 1.9.6.
+
 1. Download the [Wanxiang BGM Player 1.9.6 installer](https://github.com/spdore/wanxiang-bgm/releases/download/v1.9.6/WanxiangBgmSetup-1.9.6.exe).
 2. Run it, choose an installation folder with **Browse**, then continue through the setup wizard.
 3. The installer checks for WebView2 Runtime and VB-CABLE and reuses existing installations. If WebView2 Runtime is missing, setup uses the included official Microsoft Bootstrapper to download it; an internet connection is required. The VB-CABLE driver package is included.

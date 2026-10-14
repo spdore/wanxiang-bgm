@@ -6,19 +6,21 @@
 
 Wanxiang BGM Player plays local audio from global keyboard shortcuts. It mixes the selected physical microphone with this application's music and sends that mix to VB-CABLE. Headphone music and voice-chat music have independent volume controls.
 
-**Current version: 1.9.6** · Windows 10 version 1903 or later / Windows 11 · x64 · Chinese interface · Empty library in the installer
+**Current source version: 1.9.7** · Windows 10 version 1903 or later / Windows 11 · x64 · Chinese-language interface · Empty library in the installer
 
 ## Download and install
 
-Download the [1.9.6 Windows installer](https://github.com/spdore/wanxiang-bgm/releases/download/v1.9.6/WanxiangBgmSetup-1.9.6.exe), choose an installation folder, and continue through the setup wizard. The installer checks for the Microsoft WebView2 Runtime and reuses it when present. If it is missing, the included official Microsoft Bootstrapper downloads and installs it, so an internet connection is required in that case. The official VB-CABLE driver package is included. Installing the driver requires Windows administrator approval and may require a restart; follow the signed driver's prompts.
+The repository's current source is version 1.9.7. The latest downloadable GitHub installer remains [version 1.9.6](https://github.com/spdore/wanxiang-bgm/releases/download/v1.9.6/WanxiangBgmSetup-1.9.6.exe); a 1.9.7 installer release has not been published. To build the current source, follow **Build from source** below. For the 1.9.6 installer, choose an installation folder and continue through the setup wizard. The installer checks for the Microsoft WebView2 Runtime and reuses it when present. If it is missing, the included official Microsoft Bootstrapper downloads and installs it, so an internet connection is required in that case. The official VB-CABLE driver package is included. Installing the driver requires Windows administrator approval and may require a restart; follow the signed driver's prompts.
 
 The package is for 64-bit Intel/AMD Windows 10 version 1903 or later, or Windows 11, and requires .NET Framework 4.8 or later. The installer starts with an empty music library. Add your own files after installation.
 
 ## Features
 
 - Import MP3, WAV, M4A, AAC, WMA, FLAC, Ogg Vorbis, Opus, and AIFF files supported by the current Windows media decoders.
+- Convert selected local NetEase NCM, traditional QQ QMCv1, embedded-key QQ QMCv2, and Kugou KGM/VPR files offline. QQ `.mflac`/`.mgg` conversion is limited to recognized QMCv2 variants with an embedded EKey; MusicEx/STag files without one return `KeyUnavailable`. KGM/VPR support is limited to crypto v3/v4. See the [encrypted format support matrix](docs/ENCRYPTED_FORMAT_SUPPORT.md); real platform samples are still needed before claiming compatibility across current downloads.
 - Assign a global shortcut to each library track. Only one BGM track can play at a time; pressing an assigned track key while music is loading or playing stops it.
 - Set a start point and optional end point for single-track shortcut playback.
+- Audition unsaved range edits through the Windows default audio output. Audition never saves the draft or sends it to CABLE Input; the editor timeline shows only its editable start and end markers.
 - Play the full song with the regular Play button or either random-playback entry point.
 - Seek anywhere across the full song. Seeking during anchored playback removes that session's range limit, keeps saved anchor markers visible, and leaves the saved anchors unchanged.
 - Build a random playlist from every supported audio file in the application's `bgm` folder, including tracks without individual shortcuts. Search, bulk-select visible results, and keep the selection across restarts.
@@ -31,6 +33,20 @@ The package is for 64-bit Intel/AMD Windows 10 version 1903 or later, or Windows
 - Adjust headphone music and virtual-channel music independently. Removing a song from the library does not delete its source file.
 - Use the graphite-and-amber console styling in dark mode and a matching warm graphite-and-amber palette in light mode. Both retain the existing top navigation and page layouts.
 - Disable WebView2 zoom controls, including Ctrl+mouse wheel, so the interface scale stays fixed.
+
+## Version history
+
+This README records the release history available in the repository, from 1.8.4 through the current 1.9.7 source. See [CHANGELOG.md](CHANGELOG.md) for the detailed change log.
+
+- **1.9.7** — Adds offline import for supported NCM, QQ QMCv1/QMCv2, and Kugou KGM/VPR variants; bounded, cancellable conversion and audio validation; themed per-file import results; headphone-only audition of unsaved playback ranges; and per-scene continuous random playback. The range editor now shows only the adjustable start/end markers.
+- **1.9.6** — Replaces the large offline WebView2 runtime package with Microsoft's official Evergreen Bootstrapper and reuses an installed runtime.
+- **1.9.5** — Aligns the playback thumb with its seek rail and disables WebView2 zoom controls.
+- **1.9.4** — Restores the warm GRAPHITE light theme, improves volume-meter and progress styling, and adds a live BGM-only spectrum.
+- **1.9.3** — Introduces the GRAPHITE console styling, top navigation, independent vertical output faders, and route-specific music meters.
+- **1.9.2** — Refines keyboard focus, closes the range editor after a successful save, and adds a themed scene-delete dialog.
+- **1.9.1** — Adds the dedicated scene-management page and persisted loudness baseline; simplifies track cards and removes loudness controls from Voice Settings.
+- **1.9.0** — Adds per-scene libraries and shuffle bags, integrated-loudness matching, a virtual-channel limiter, portable .wbgm scene packs, and an empty-library installer.
+- **1.8.4** — Adds multi-format audio import, per-track shortcut ranges, full-song seeking, a searchable random playlist, and light/dark themes.
 
 ## Quick start
 
@@ -55,6 +71,12 @@ The file picker accepts MP3, WAV, M4A, AAC, WMA, FLAC, Ogg Vorbis, Opus, and AIF
 
 MP3 seeking decodes forward and discards sample frames to avoid incorrect variable-bitrate seek-index results. Seeking far into a long MP3 can take longer than seeking an uncompressed WAV file.
 
+## Encrypted local audio
+
+Version 1.9.7 adds an offline conversion helper for NCM, QMCv1/QMCv2, and KGM/VPR. The helper uses a pinned, MIT-licensed decoder subset and is bundled in the player; users do not need Python. It does not log in, download files, inspect client processes, or read cookies, tickets, or external key databases. It accepts only keys embedded in supported files. Output type is determined from the decrypted bytes, and the existing player decoder must read the complete converted file before the library imports it. Some outputs depend on Windows codec availability. The offline converter caps encrypted input at 256 MiB and decoded output at 512 MiB. Conversion still materializes payloads in memory, so these caps bound memory demand but do not make the decoder streaming. Import inspection, conversion, Media Foundation validation, deduplication, and large-file copying run in owned child processes with bounded deadlines and cancellable process-tree cleanup. A per-file timeout is reported separately and does not cancel the remaining batch. See the [support matrix](docs/ENCRYPTED_FORMAT_SUPPORT.md) for exact variants, timeout defaults, and sample status.
+
+Version 1.9.7 presents song-import progress and per-file results in a themed WebView2 modal. The range editor auditions its unsaved start/end draft through the Windows default audio output; audition does not save anchors or send music to CABLE Input. Random playback supports per-scene normal and continuous modes. Continuous mode advances only after the current session reports natural completion, uses the scene's no-repeat shuffle bag, and ends on a second random action or another explicit interruption. Missing or undecodable files are skipped or reported without an unbounded retry loop. These features are in the current source; they are not included in the downloadable 1.9.6 installer.
+
 ## Loudness normalization
 
 The first measurable audio file in the existing library becomes the persisted reference baseline. If the library is empty, its first analyzable import becomes the baseline. The application analyzes the current library once in the background, then reuses cached loudness measurements on later launches. Newly imported files are analyzed against the saved baseline; the baseline measurement itself is reused from its cache. New tracks are matched to the baseline's integrated loudness, subject to the +11 dB gain cap and -1 dBFS per-track sample-peak ceiling. No audio file is rewritten. The final virtual-channel mix also uses a -1 dBFS sample-peak limiter after microphone and BGM are mixed; this is not a true-peak guarantee.
@@ -75,29 +97,37 @@ The player timeline keeps its full-song seeking behavior and saved anchor marker
 
 ## Build from source
 
-Run PowerShell on a Windows development machine with the .NET Framework C# compiler installed:
+Run PowerShell on a Windows development machine with CPython 3.14.3 x64, the pinned helper build packages, and the .NET Framework C# compiler installed. Python is a build-time dependency only; the output contains the helper runtime.
 
 ```powershell
-.\build.ps1 -OutputName 'BgmHotkey_1.9.6.exe'
+.\tools\build-encrypted-audio-helper.ps1 `
+  -OutputArchive 'local-only\build-staging\encrypted-audio-helper-1.9.7.zip' `
+  -PythonPath 'C:\path\to\python.exe'
+.\build.ps1 `
+  -OutputName 'BgmHotkey_1.9.7.exe' `
+  -CryptoHelperArchive 'local-only\build-staging\encrypted-audio-helper-1.9.7.zip'
 ```
 
-The app uses C# 5, .NET Framework 4.8, Windows Forms, WinMM, Media Foundation, and WebView2. The interface is an embedded HTML/CSS/SVG document hosted by WebView2. The build copies the WebView2 SDK assemblies and architecture-specific loader beside the executable.
+The helper build requires PyInstaller 6.22.3, PyCryptodome 3.20.0, and the exact supporting package versions checked by `tools/build-encrypted-audio-helper.ps1`. The app uses C# 5, .NET Framework 4.8, Windows Forms, WinMM, Media Foundation, and WebView2. The interface is an embedded HTML/CSS/SVG document hosted by WebView2. The build copies the WebView2 SDK assemblies and architecture-specific loader beside the executable. It refuses to overwrite an existing candidate.
 
 To build a share installer, download the official Microsoft Evergreen WebView2 Bootstrapper from [Microsoft](https://go.microsoft.com/fwlink/p/?LinkId=2124703) and save it as `vendor/webview2/bootstrapper/MicrosoftEdgeWebview2Setup.exe`. The signed VB-CABLE driver archive is included at `vendor/vb-cable/VBCABLE_Driver_Pack45.zip`. Then run:
 
 ```powershell
-.\packaging\build-share.ps1 -OutputName 'WanxiangBgmSetup-1.9.6.exe'
+.\packaging\build-share.ps1 `
+  -OutputName 'WanxiangBgmSetup-1.9.7.exe' `
+  -PythonPath 'C:\path\to\python.exe' `
+  -PythonDependencyPath 'C:\path\to\python\Lib\site-packages'
 ```
 
-The packaging script validates the Microsoft Bootstrapper and VB-Audio Authenticode signatures and refuses to overwrite an existing installer. The small Bootstrapper is embedded in the release package; the full Evergreen Runtime is downloaded from Microsoft only if it is missing. Setup therefore needs internet access only for that missing-runtime case. The Bootstrapper uses Microsoft's documented `/silent /install` command and setup verifies the Runtime after installation. This package is not a fully offline installer. See Microsoft's [WebView2 distribution guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution).
+`PythonDependencyPath` is optional when packages are already available to the selected Python interpreter. The packaging script validates the Microsoft Bootstrapper and VB-Audio Authenticode signatures and refuses to overwrite an existing installer. The small Bootstrapper is embedded in the release package; the full Evergreen Runtime is downloaded from Microsoft only if it is missing. Setup therefore needs internet access only for that missing-runtime case. The Bootstrapper uses Microsoft's documented `/silent /install` command and setup verifies the Runtime after installation. This package is not a fully offline installer. See Microsoft's [WebView2 distribution guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution).
 
 ## Project layout and privacy
 
-See [Project Structure](docs/PROJECT_STRUCTURE.md), [Installation Notes](docs/INSTALLATION.md), and [Changelog](CHANGELOG.md). Third-party notices are in [`licenses/`](licenses/).
+See [Project Structure](docs/PROJECT_STRUCTURE.md), [Architecture](ARCHITECTURE.md), [Encrypted Format Support](docs/ENCRYPTED_FORMAT_SUPPORT.md), [Installation Notes](docs/INSTALLATION.md), and [Changelog](CHANGELOG.md). Third-party notices are in [`licenses/`](licenses/).
 
 The source tree and share installer contain no personal music library, recordings, promotional video, workstation logs, or local machine paths. The share installer starts with an empty library. User settings and imported files stay in the current Windows user's local application data folder; uninstalling the player preserves them and does not remove the shared VB-CABLE driver or WebView2 runtime.
 
 ## Third-party components
 
-The installer includes the official VB-CABLE driver by VB-Audio and Microsoft's official WebView2 Evergreen Bootstrapper. See the relevant third-party notices and distribution terms before redistributing modified packages. This project's installer is not digitally signed.
+The installer includes the offline converter helper, CPython/OpenSSL runtime libraries, the official VB-CABLE driver by VB-Audio, and Microsoft's official WebView2 Evergreen Bootstrapper. Converter source, checksums, and third-party terms are recorded in `vendor/music-geshizhuanhuan/UPSTREAM.md` and `licenses/MusicConverter-NOTICES.txt`. The full converter notice is embedded in the player and installed beside it. See all notices and distribution terms before redistributing modified packages. This project's installer is not digitally signed.
 

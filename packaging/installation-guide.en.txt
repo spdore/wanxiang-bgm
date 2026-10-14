@@ -1,0 +1,45 @@
+Wanxiang BGM Player — Windows x64 Installation Guide
+Version: 1.9.7
+
+INSTALLATION
+Run the installer, choose an installation folder, and follow the setup prompts. Setup reuses an installed Microsoft WebView2 Runtime. If the runtime is missing, the included official Microsoft Bootstrapper downloads and installs it, so an internet connection is required. The official VB-CABLE driver package is included. Windows requires administrator approval to install the driver and may require a restart. In QQ or a game, select CABLE Output as the microphone or recording device.
+
+The installer supports 64-bit Intel/AMD Windows 10 version 1903 or later and Windows 11. It requires .NET Framework 4.8 or later. Supported recent Windows versions normally include the required .NET Framework. The installer starts with an empty music library and does not overwrite personal songs, shortcuts, or settings.
+
+ADDING SONGS AND SHORTCUTS
+On the My Library page, select Add songs. The file picker opens the application's bgm folder by default, and you can also select files from other folders. Click a track's shortcut field and press a letter, number, or function key to assign its global shortcut. Use Set playback range to configure the range used by that track's shortcut. Removing a track from the library does not delete its source file.
+
+The player accepts supported standard audio files and can convert selected local NCM, traditional QMCv1, embedded-key QMCv2, and KGM/VPR files offline. QQ QMCv2 .mflac and .mgg files are supported only when their structure is recognized and the file contains a usable embedded key. MusicEx, STag, and other variants without an available key report that the key is unavailable. Kugou support is limited to KGM/VPR crypto versions 3 and 4. The converter identifies output format from the decrypted file contents and validates the complete audio before import. If Windows lacks a compatible decoder, the file is not added to the library. The source file is never deleted or overwritten.
+
+PLAYBACK RANGES AND AUDITION
+Shortcut playback ranges apply only when the track's individual shortcut is used. A missing start point means the song begins at the start; a missing end point means playback continues to the end. The regular Play button and random playback always use the full song.
+
+The range editor includes an Audition button for previewing the current unsaved start/end values through the Windows default audio output. Audition does not save or change the stored anchors and is not sent to CABLE Input. Closing the editor stops audition. Its timeline shows only the editable start/end markers and the selected range. Dragging the main player progress bar seeks across the full song and does not change saved anchors.
+
+RANDOM PLAYBACK
+The random playlist scans supported audio in the bgm folder, including songs without individual shortcuts. Search and bulk selection are available, and each scene stores its own playlist and shuffle state. The shuffle bag avoids repeats within a round and avoids an immediate repeat at a round boundary when at least two songs are available.
+
+Normal mode plays one random full song and stops when the random shortcut is pressed again. Continuous mode selects another song after natural completion and continues until the random shortcut is pressed again or another explicit stop action occurs. Missing or undecodable files can be skipped; playback ends when no usable candidates remain.
+
+SCENES
+The Scenes page can create an empty scene, copy the current scene, rename or remove a scene, and switch the active scene. Each scene stores its songs, shortcuts, playback ranges, random playlist, and random mode. Removing a scene does not delete library audio. Microphone selection, output routing, and music volume are shared by all scenes.
+
+LOUDNESS AND SOUND PACKS
+The player measures integrated loudness in the background and uses the first measurable track as its reference baseline. Later imports are matched to that baseline. Per-track positive gain is capped at 11 dB and each track is kept below a -1 dBFS sample peak. The virtual-channel mix also uses a -1 dBFS sample-peak limiter after microphone and BGM are mixed; this is not a true-peak guarantee.
+
+The player can export the active scene as a .wbgm sound pack. A pack includes scene settings and referenced shortcut/random-playlist audio, but excludes absolute paths and global device, volume, and unrelated user settings. Import validates the manifest, file hashes, and archive paths, then creates a new scene after confirmation. Identical local audio can be reused, and filename conflicts do not overwrite existing files.
+
+VOICE ROUTING
+1. In Voice Settings, select the physical microphone and CABLE Input.
+2. In QQ or a game, select CABLE Output as the microphone or recording device.
+3. Play a song and use the player's signal check to inspect the route.
+
+The virtual channel contains only the selected physical microphone and this application's BGM; it does not capture audio from other applications. Headphone BGM and chat-channel BGM have independent controls. Their 0–100% sliders map to a digital gain range of 0–30%, not calibrated sound-pressure levels. Music volume does not change microphone volume.
+
+DEPENDENCIES AND LICENSES
+The player includes the offline conversion helper, so users do not need to install Python. Third-party source and license notices are installed beside the application in MusicConverter-NOTICES.txt.
+
+Microsoft's official WebView2 Evergreen Bootstrapper installs the runtime only when it is missing; that case requires an internet connection. VB-CABLE is provided by VB-Audio at https://vb-audio.com/Cable/. The official driver package is distributed unchanged and may require administrator approval and a restart. Uninstalling the player does not remove the shared VB-CABLE driver or WebView2 Runtime.
+
+USER DATA
+Settings and imported songs are stored in %LOCALAPPDATA%\BgmHotkeyShare. The installer contains no music library, recordings, developer-machine paths, personal device names, or user configuration. Uninstalling the player preserves songs and settings.

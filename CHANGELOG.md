@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.9.7
+
+- Adds offline conversion import for NCM, traditional QQ QMCv1, embedded-key QQ QMCv2, and Kugou KGM/VPR containers using a pinned decoder subset and a bundled helper process.
+- Bounds encrypted input to 256 MiB and decoded output to 512 MiB; unknown, damaged, keyless, or oversized files return explicit failure states without unbounded decoder retries.
+- Isolates inspection, first-time helper extraction, conversion, Media Foundation validation, content deduplication, and large-file copying in owned child processes with scaled total deadlines, bounded output capture, Job Object descendant cleanup, immediate asynchronous cancellation, and a 120-second copy no-progress deadline.
+- Records elapsed stage diagnostics and keeps per-file timeouts distinct from batch cancellation so a timed-out file does not prevent later files from importing.
+- Recognizes QMCv2 from file structure, supports embedded QTag/PcV1Legacy EKeys through Map/RC4 decoding, and reports keyless MusicEx/STag variants as `KeyUnavailable`. QQ `.mflac`/`.mgg` output is selected from decoded bytes; not all platform variants are claimed.
+- Limits Kugou KGM/VPR decoding to crypto v3/v4. No online lookup, client access, external EKey database, or manual key storage is added.
+- Validates converted audio by checking its container header and reading the complete output through the existing player decoder before adding it to the library; reuses a byte-identical same-format local file when present.
+- Adds cancellable per-file import progress, task-scoped temporary cleanup, settings-save rollback, pinned component provenance, support matrix, and converter notices embedded in and installed beside the player.
+- Replaces the song-import progress/results window with a themed WebView2 modal that shows per-file Chinese status, expandable technical details, progress, cancellation, and source-preservation messaging.
+- Adds headphone-only audition for unsaved start/end drafts in the anchor editor; auditions use the accurate streaming seek path and stop on editor close, scene change, or application shutdown.
+- Adds per-scene normal and continuous random modes. Continuous playback advances only on a session-identified natural completion, reuses the no-repeat shuffle bag, skips failed candidates with bounded retries, and stops cleanly on a second random action or other explicit interruption.
+- Removes the playback-position line from the anchor editor timeline; only the editable start/end markers and selected range remain visible.
+- Sets the player and installer metadata to version 1.9.7. Real platform samples are still required to verify each supported encrypted-file variant.
+
 ## 1.9.6
 
 - Replaces the 214 MB WebView2 Evergreen offline installer embedded in the setup package with Microsoft's small official Evergreen Bootstrapper.

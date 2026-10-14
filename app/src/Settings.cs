@@ -40,6 +40,11 @@ namespace BgmHotkey
 #endif
         }
 
+        public static string ImportJobPath(Guid jobId)
+        {
+            return Path.Combine(SettingsDirectory, "import-work", "job_" + jobId.ToString("N"));
+        }
+
         public static void Log(string message)
         {
             try
@@ -239,7 +244,8 @@ namespace BgmHotkey
             ScenePreset source = ActiveScene;
             if (source == null) return null;
             ScenePreset copy = new ScenePreset { Id = source.Id, Name = source.Name, RandomKey = source.RandomKey,
-                RandomFileNames = (string[])(source.RandomFileNames ?? new string[0]).Clone() };
+                RandomFileNames = (string[])(source.RandomFileNames ?? new string[0]).Clone(),
+                RandomMode = RandomPlaybackMode.Normalize(source.RandomMode) };
             List<SceneTrack> tracks = new List<SceneTrack>();
             foreach (SceneTrack track in source.Tracks ?? new SceneTrack[0])
                 tracks.Add(new SceneTrack { TrackId = track.TrackId, Name = track.Name, StartSeconds = track.StartSeconds, EndSeconds = track.EndSeconds });
@@ -277,6 +283,7 @@ namespace BgmHotkey
                 created.Bindings = bindings.ToArray();
                 created.RandomKey = current.RandomKey;
                 created.RandomFileNames = (string[])(current.RandomFileNames ?? new string[0]).Clone();
+                created.RandomMode = RandomPlaybackMode.Normalize(current.RandomMode);
             }
             List<ScenePreset> scenes = new List<ScenePreset>(Scenes ?? new ScenePreset[0]);
             scenes.Add(created);
@@ -428,6 +435,7 @@ namespace BgmHotkey
             {
                 if (scene == null || String.IsNullOrWhiteSpace(scene.Id) || !sceneIds.Add(scene.Id)) continue;
                 if (String.IsNullOrWhiteSpace(scene.Name)) scene.Name = "未命名场景";
+                scene.RandomMode = RandomPlaybackMode.Normalize(scene.RandomMode);
                 List<SceneTrack> sceneTracks = new List<SceneTrack>();
                 HashSet<string> sceneTrackIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (SceneTrack entry in scene.Tracks ?? new SceneTrack[0])
@@ -527,7 +535,20 @@ namespace BgmHotkey
         public TrackBinding[] Bindings { get; set; }
         public string RandomKey { get; set; }
         public string[] RandomFileNames { get; set; }
-        public ScenePreset() { Tracks = new SceneTrack[0]; Bindings = new TrackBinding[0]; RandomFileNames = new string[0]; RandomKey = ""; }
+        public string RandomMode { get; set; }
+        public ScenePreset() { Tracks = new SceneTrack[0]; Bindings = new TrackBinding[0]; RandomFileNames = new string[0]; RandomKey = ""; RandomMode = RandomPlaybackMode.Normal; }
+    }
+
+    internal static class RandomPlaybackMode
+    {
+        public const string Normal = "normal";
+        public const string Continuous = "continuous";
+
+        public static string Normalize(string value)
+        {
+            if (String.Equals(value, Continuous, StringComparison.OrdinalIgnoreCase)) return Continuous;
+            return Normal;
+        }
     }
 
     [Serializable]

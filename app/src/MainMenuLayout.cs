@@ -43,6 +43,7 @@ namespace BgmHotkey
             _headphoneVolume.ValueChanged+=VolumeChanged; _cableVolume.ValueChanged+=VolumeChanged;
             _microphone.SelectedIndexChanged+=DeviceChanged; _cable.SelectedIndexChanged+=DeviceChanged;
             _engine.StatusChanged+=EngineStatusChanged;
+            _engine.PlaybackCompleted+=EnginePlaybackCompleted;
             LoadDevices(); _initializing=false; RefreshStatus();
             _meterTimer=new Timer{Interval=100};
             _meterTimer.Tick+=delegate{_microphoneMeter.Value=AudioRouteProbe.MeterValue(_engine.MicrophonePeak);_musicMeter.Value=AudioRouteProbe.MeterValue(_engine.MusicPeak);_outputMeter.Value=AudioRouteProbe.MeterValue(_engine.OutputPeak);PublishWebState();};

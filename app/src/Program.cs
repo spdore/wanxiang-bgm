@@ -7,8 +7,19 @@ namespace BgmHotkey
     internal static class Program
     {
         [STAThread]
-        private static int Main()
+        private static int Main(string[] args)
         {
+            if (args != null && args.Length > 0 && args[0] == "--import-validate")
+                return AudioImportValidator.RunWorker(args);
+            if (args != null && args.Length > 0 && args[0] == "--import-copy")
+                return AudioImportValidator.RunCopyWorker(args);
+            if (args != null && args.Length > 0 && args[0] == "--import-reuse")
+                return AudioImportValidator.RunReuseWorker(args);
+            if (args != null && args.Length > 0 && args[0] == "--import-inspect")
+                return AudioImportValidator.RunInspectWorker(args);
+            if (args != null && args.Length > 0 && args[0] == "--import-extract-helper")
+                return EncryptedAudioConverter.RunHelperExtractionWorker(args);
+
             bool createdNew = false;
             Mutex mutex = null;
             AudioEngine engine = null;
