@@ -43,7 +43,7 @@ namespace BgmHotkey
 
     internal static class LoudnessAnalyzer
     {
-        public const string AlgorithmVersion = "BS1770-R128-v4-baseline-44100";
+        public const string AlgorithmVersion = "BS1770-R128-v5-local-measurement-44100";
         public const string PreviousAlgorithmVersion = "BS1770-R128-v3-mcicap-44100";
         public const string LegacyAlgorithmVersion = "BS1770-R128-v2-peakcap-44100";
         public const double TargetLufs = -18.0;
@@ -153,9 +153,9 @@ namespace BgmHotkey
 
         public static bool IsCompatibleAlgorithmVersion(string version)
         {
-            return String.Equals(version, AlgorithmVersion, StringComparison.Ordinal) ||
-                String.Equals(version, PreviousAlgorithmVersion, StringComparison.Ordinal) ||
-                String.Equals(version, LegacyAlgorithmVersion, StringComparison.Ordinal);
+            // Older versions can include untrusted pack-supplied measurements and
+            // do not carry the file identity metadata required for safe reuse.
+            return String.Equals(version, AlgorithmVersion, StringComparison.Ordinal);
         }
 
         public static double CalculateGainDb(double integratedLufs, double peakDbfs, double targetLufs)

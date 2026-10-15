@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.8
+
+- Organizes application source into Core, Audio, Features, Platform, Settings, and UI modules while preserving the existing shared C# namespace.
+- Groups unit, UI, import integration, and installer integration tests by purpose; updates build and test entry points to discover modules recursively.
+- Standardizes player, installer, guide, and WebView2 sidecar output under `release/1.9.8/` and updates application/installer version metadata to 1.9.8.
+- Clarifies the 1.9.8 player and installer build steps.
+- Removes stale 1.9.7 build outputs after producing and verifying the 1.9.8 release build; intended playback and import behavior is unchanged.
+
 ## 1.9.7
 
 - Adds offline conversion import for NCM, traditional QQ QMCv1, embedded-key QQ QMCv2, and Kugou KGM/VPR containers using a pinned decoder subset and a bundled helper process.

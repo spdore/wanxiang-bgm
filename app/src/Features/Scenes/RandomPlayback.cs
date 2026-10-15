@@ -205,7 +205,7 @@ namespace BgmHotkey
 
         private void OpenRandomSettings(object sender, EventArgs e)
         {
-            _capturingKey = true;
+            SetKeyCapture("winforms-dialog", true);
             try
             {
                 using (RandomPlaybackForm dialog = new RandomPlaybackForm(_settings))
@@ -215,7 +215,7 @@ namespace BgmHotkey
                         RefreshStatus();
                     }
             }
-            finally { _capturingKey = false; ActiveControl = null; }
+            finally { SetKeyCapture("winforms-dialog", false); ActiveControl = null; }
         }
     }
 

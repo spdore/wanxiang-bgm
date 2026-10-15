@@ -1,7 +1,6 @@
 # Local user content and media
 /bgm/
 /local-only/
-/release/
 *.mp3
 *.wav
 *.flac
@@ -18,13 +17,14 @@
 *.avi
 
 # Generated player and installer output
-/BgmHotkey*.exe
-/BgmHotkey*.exe.config
+/release/
+/packaging/.build-*/
+/local-only/build-staging/
+/BgmHotkey_*.exe
+/BgmHotkey_*.exe.config
 /Microsoft.Web.WebView2.Core.dll
 /Microsoft.Web.WebView2.WinForms.dll
 /WebView2Loader.dll
-/packaging/.build-*/
-/local-only/build-staging/
 /vendor/webview2/bootstrapper/*.exe
 /vendor/webview2/runtime-installer/*.exe
 

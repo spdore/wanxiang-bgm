@@ -10,7 +10,7 @@ import wave
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "vendor" / "music-geshizhuanhuan"))
 SPEC = importlib.util.spec_from_file_location("crypto_roundtrip_fixtures", Path(__file__).with_name("encrypted_audio_helper_roundtrip.py"))
 assert SPEC is not None and SPEC.loader is not None

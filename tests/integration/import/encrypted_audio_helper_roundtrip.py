@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 sys.dont_write_bytecode = True
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 VENDOR = ROOT / "vendor" / "music-geshizhuanhuan"
 sys.path.insert(0, str(VENDOR))
 

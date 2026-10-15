@@ -21,6 +21,8 @@ namespace BgmHotkey
         private readonly Label _cableValue;
         private bool _initializing;
         private volatile bool _capturingKey;
+        private readonly object _keyCaptureGate = new object();
+        private readonly HashSet<string> _keyCaptureReasons = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly ProgressBar _microphoneMeter;
         private readonly ProgressBar _musicMeter;
         private readonly ProgressBar _outputMeter;
@@ -34,8 +36,18 @@ namespace BgmHotkey
 
         private void RebuildBindings()
         {
-            _capturingKey = false;
             RefreshStatus();
+        }
+
+        private void SetKeyCapture(string reason, bool active)
+        {
+            if (String.IsNullOrWhiteSpace(reason)) reason = "unspecified";
+            lock (_keyCaptureGate)
+            {
+                if (active) _keyCaptureReasons.Add(reason);
+                else _keyCaptureReasons.Remove(reason);
+                _capturingKey = _keyCaptureReasons.Count > 0;
+            }
         }
 
         private void AddSongs(object sender, EventArgs e)
@@ -61,15 +73,15 @@ namespace BgmHotkey
             })
             {
                 DialogResult picked;
-                _capturingKey = true;
+                SetKeyCapture("file-picker", true);
                 try { picked = picker.ShowDialog(this); }
-                finally { _capturingKey = false; }
+                finally { SetKeyCapture("file-picker", false); }
                 if (picked != DialogResult.OK) return;
 
                 string[] paths = (string[])picker.FileNames.Clone();
                 SongImportOperation operation = new SongImportOperation();
                 _activeSongImport = operation;
-                _capturingKey = true;
+                SetKeyCapture("song-import", true);
                 _songImportResults.Clear();
                 _songImportState = new SongImportProgressState
                 {
@@ -578,7 +590,6 @@ namespace BgmHotkey
                 : operation.CanCleanup
                     ? "处理完成。成功 " + succeeded + " 项（新增 " + addedCount + " 首），失败 " + _songImportState.Failed + " 项，超时 " + timedOut + " 项。源文件未修改。"
                     : "处理已停止。成功 " + succeeded + " 项，另有工作进程退出未确认；临时文件已保留，未继续处理。";
-            _capturingKey = true;
             PublishWebState();
         }
 
@@ -646,7 +657,7 @@ namespace BgmHotkey
             }
             _songImportState = null;
             _songImportResults.Clear();
-            _capturingKey = false;
+            SetKeyCapture("song-import", false);
             PublishWebState();
         }
         private void DeleteSong(TrackDefinition track)
@@ -949,6 +960,7 @@ namespace BgmHotkey
         {
             _shuttingDown = true;
             CancelContinuousRandom();
+            CancelAnchorInspection();
             _engine.StopActiveTrack();
             if (_activeSongImport != null) _activeSongImport.Cancel();
             SoundPackService.Cancel();

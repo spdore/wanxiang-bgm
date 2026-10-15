@@ -29,6 +29,7 @@ namespace BgmHotkey
   private long _webEditorFileLength;
   private DateTime _webEditorLastWriteUtc;
   private int _webEditorRequest;
+  private SongImportOperation _webAnchorInspectionOperation;
   private bool _analysisRunning;
   private readonly object _analysisQueueGate = new object();
   private readonly Queue<string> _pendingAnalysisFiles = new Queue<string>();
@@ -139,7 +140,7 @@ namespace BgmHotkey
     }
     foreach(string file in _settings.ActiveRandomFiles??new string[0])playing|=_engine.IsTrackPlaying("random_file:"+file);
     List<string> mics=new List<string>();foreach(AudioDevice d in _devices.Microphones)mics.Add(d.Name);
-    List<string> cables=new List<string>();foreach(AudioDevice d in _devices.Cables)cables.Add(d.Name);
+    List<string> cables=new List<string>();foreach(AudioDevice d in _devices.Cables)cables.Add(d.Name);AudioDevice resolvedMicrophone=_devices.FindMicrophone(_settings.MicrophoneDeviceName);AudioDevice resolvedCable=_devices.FindCable(_settings.CableDeviceName);
     PlaybackSnapshot playback=_engine.GetPlaybackSnapshot();
     object playbackState=new {sessionId=playback.SessionId,generation=playback.Generation,trackId=playback.TrackId,trackName=playback.TrackName,fileName=playback.FileName,state=playback.State,positionSeconds=playback.PositionSeconds,durationSeconds=playback.DurationSeconds,startSeconds=playback.StartSeconds,endSeconds=playback.EndSeconds,error=playback.Error,canSeek=playback.CanSeek,playbackMode=playback.PlaybackMode};
     SavedTrack editorTrack=_settings.FindActiveTrack(_webEditorTrackId);
@@ -159,13 +160,15 @@ namespace BgmHotkey
       importResults.Add(new {index=item.Index,fileName=item.FileName,status=item.Status,detail=item.Detail,technicalDetail=item.TechnicalDetail,success=item.Success,pending=item.Pending,outcome=item.Outcome});
      songImport=new {operationId=_songImportState.OperationId,active=_songImportState.Active,complete=_songImportState.Complete,cancelRequested=_songImportState.CancelRequested,cancelled=_songImportState.Cancelled,total=_songImportState.Total,current=_songImportState.Current,added=_songImportState.Added,succeeded=_songImportState.Succeeded,failed=_songImportState.Failed,timedOut=_songImportState.TimedOut,cancelledCount=_songImportState.CancelledCount,elapsedMilliseconds=_songImportState.ElapsedMilliseconds,progressMode=_songImportState.ProgressMode,currentFile=_songImportState.CurrentFile,stage=_songImportState.Stage,summary=_songImportState.Summary,results=importResults.ToArray()};
     }
-    _web.CoreWebView2.PostWebMessageAsJson(_webJson.Serialize(new {type="state",tracks=tracks,head=_settings.HeadphoneVolume,cable=_settings.CableVolume,randomKey=_settings.ActiveRandomKey,randomMode=RandomPlaybackMode.Normalize(activeScene==null?"":activeScene.RandomMode),continuousActive=_continuousRandomActive,selected=_settings.ActiveRandomFiles??new string[0],files=_webFiles,formats=AudioFormatCatalog.SupportedExtensionsText,microphones=mics,cables=cables,microphone=_settings.MicrophoneDeviceName,cableDevice=_settings.CableDeviceName,playing=playing||playback.State=="playing"||playback.State=="loading",summary=_engine.PlaybackSummary,status=_status.Text,playback=playbackState,editor=new {id=_webEditorTrackId,requestId=_webEditorRequest,loading=_webEditorLoading,error=_webEditorError,warning=_webEditorWarning,duration=_webEditorDuration,start=editorTrack==null?0:editorTrack.StartSeconds,end=editorTrack==null?(double?)null:editorTrack.EndSeconds},songImport=songImport,probe=_webProbe,probing=_webProbing,micPeak=AudioRouteProbe.MeterValue(_engine.MicrophonePeak),musicPeak=AudioRouteProbe.MeterValue(_engine.MusicPeak),headphoneMusicPeak=AudioRouteProbe.MeterValue(_engine.HeadphoneMusicPeak),outputPeak=AudioRouteProbe.MeterValue(_engine.OutputPeak),musicSpectrum=_engine.MusicSpectrum,scenes=scenes,activeScene=_settings.ActiveSceneId,packBusy=_packBusy,packProgress=SoundPackService.ProgressText}));
+    _web.CoreWebView2.PostWebMessageAsJson(_webJson.Serialize(new {type="state",tracks=tracks,head=_settings.HeadphoneVolume,cable=_settings.CableVolume,randomKey=_settings.ActiveRandomKey,randomMode=RandomPlaybackMode.Normalize(activeScene==null?"":activeScene.RandomMode),continuousActive=_continuousRandomActive,selected=_settings.ActiveRandomFiles??new string[0],files=_webFiles,formats=AudioFormatCatalog.SupportedExtensionsText,microphones=mics,cables=cables,microphone=_settings.MicrophoneDeviceName,cableDevice=_settings.CableDeviceName,microphoneResolved=resolvedMicrophone==null?"":resolvedMicrophone.Name,cableResolved=resolvedCable==null?"":resolvedCable.Name,playing=playing||playback.State=="playing"||playback.State=="loading",summary=_engine.PlaybackSummary,status=_status.Text,playback=playbackState,editor=new {id=_webEditorTrackId,requestId=_webEditorRequest,loading=_webEditorLoading,error=_webEditorError,warning=_webEditorWarning,duration=_webEditorDuration,start=editorTrack==null?0:editorTrack.StartSeconds,end=editorTrack==null?(double?)null:editorTrack.EndSeconds},songImport=songImport,probe=_webProbe,probing=_webProbing,micPeak=AudioRouteProbe.MeterValue(_engine.MicrophonePeak),musicPeak=AudioRouteProbe.MeterValue(_engine.MusicPeak),headphoneMusicPeak=AudioRouteProbe.MeterValue(_engine.HeadphoneMusicPeak),outputPeak=AudioRouteProbe.MeterValue(_engine.OutputPeak),musicSpectrum=_engine.MusicSpectrum,scenes=scenes,activeScene=_settings.ActiveSceneId,packBusy=_packBusy,packProgress=SoundPackService.ProgressText}));
    }catch(InvalidOperationException){}
   }
 
   private void InspectTrackForAnchors(string id)
   {
    TrackDefinition track=TrackCatalog.Find(id);if(track==null)return;
+   CancelAnchorInspection();
+   SongImportOperation operation=new SongImportOperation();_webAnchorInspectionOperation=operation;
    StopAnchorPreview();
    int request=++_webEditorRequest;
    _webEditorTrackId=track.Id;_webEditorDuration=0;_webEditorLoading=true;_webEditorError="";_webEditorWarning="";_webEditorFileLength=0;_webEditorLastWriteUtc=DateTime.MinValue;PublishWebState();
@@ -174,13 +177,18 @@ namespace BgmHotkey
     double duration=0;string error="";long length=0;DateTime lastWrite=DateTime.MinValue;
     try{
      FileInfo before=new FileInfo(path);if(!before.Exists)throw new FileNotFoundException("音频文件不存在。",path);long beforeLength=before.Length;DateTime beforeWrite=before.LastWriteTimeUtc;
-     duration=AudioFormatCatalog.ProbeDurationSeconds(path);
+     string taskDirectory=AppPaths.ImportJobPath(operation.Id);Directory.CreateDirectory(taskDirectory);
+     AudioImportValidationResult probe=AudioImportValidator.Validate(path,beforeLength,false,taskDirectory,0,operation);
+     if(probe.Status!=AudioImportValidationStatus.Valid)throw new IOException(probe.Message.Length==0?"音频时长检查未能完成。":probe.Message);
+     duration=probe.DurationSeconds;
      FileInfo after=new FileInfo(path);if(!after.Exists||after.Length!=beforeLength||after.LastWriteTimeUtc!=beforeWrite)throw new IOException("读取时音频文件发生了变化，请重新打开片段编辑。 ");
      length=after.Length;lastWrite=after.LastWriteTimeUtc;
-    }catch(Exception ex){error=ex.Message;}
+    }catch(Exception ex){if(!operation.IsCancelled)error=ex.Message;}
+    finally{if(operation.CanCleanup)try{EncryptedAudioConverter.CleanupTaskDirectory(operation.Id);}catch{}}
     if(IsDisposed||!IsHandleCreated)return;
     try{BeginInvoke(new MethodInvoker(delegate {
-     if(IsDisposed||request!=_webEditorRequest)return;
+     if(IsDisposed||request!=_webEditorRequest||!Object.ReferenceEquals(_webAnchorInspectionOperation,operation))return;
+     _webAnchorInspectionOperation=null;
      _webEditorLoading=false;_webEditorDuration=duration;_webEditorError=error;_webEditorWarning="";_webEditorFileLength=length;_webEditorLastWriteUtc=lastWrite;
      SavedTrack saved=_settings.FindActiveTrack(id);
      if(error.Length==0&&saved!=null&&(saved.StartSeconds>=duration||(saved.EndSeconds.HasValue&&(saved.EndSeconds.Value>duration||saved.EndSeconds.Value<=saved.StartSeconds))))
@@ -189,6 +197,12 @@ namespace BgmHotkey
      PublishWebState();
     }));}catch(InvalidOperationException){}
    });
+  }
+
+  private void CancelAnchorInspection()
+  {
+   SongImportOperation operation=_webAnchorInspectionOperation;_webAnchorInspectionOperation=null;
+   if(operation!=null)operation.Cancel();
   }
 
   private void StartAnchorPreview(Dictionary<string,object> message,string id)
@@ -280,7 +294,6 @@ namespace BgmHotkey
 
   private void InitializeLoudnessNormalization()
   {
-   if(_settings.LoudnessNormalizationInitialized)return;
    lock(_analysisQueueGate)_analysisInitializationPending=true;
    StartLoudnessWorker();
   }
@@ -369,7 +382,7 @@ namespace BgmHotkey
   private void ProcessInitialLoudnessNormalization()
   {
    LoudnessSnapshot snapshot=ReadLoudnessSnapshot();
-   if(snapshot.Initialized||snapshot.Files.Length==0)return;
+   if(snapshot.Files.Length==0)return;
    List<string> candidates=new List<string>();
    foreach(string file in snapshot.TrackFiles)if(!candidates.Contains(file))candidates.Add(file);
    foreach(string file in snapshot.Files)if(!candidates.Contains(file))candidates.Add(file);
@@ -442,17 +455,54 @@ namespace BgmHotkey
    string path=AppPaths.TrackPath(file);FileInfo before=new FileInfo(path);
    if(!before.Exists)throw new FileNotFoundException("音频文件不存在。",path);
    long length=before.Length;DateTime write=before.LastWriteTimeUtc;
-   string fingerprint=LoudnessAnalyzer.Fingerprint(path);
    LoudnessAnalysis cached=null;
    foreach(LoudnessAnalysis item in cachedAnalyses??new LoudnessAnalysis[0])
-    if(item!=null&&String.Equals(item.FileName,file,StringComparison.OrdinalIgnoreCase)&&LoudnessAnalyzer.IsCompatibleAlgorithmVersion(item.AlgorithmVersion)) {cached=item;break;}
-   if(cached!=null&&String.Equals(cached.Fingerprint,fingerprint,StringComparison.OrdinalIgnoreCase))
+    if(item!=null&&item.IsValidated&&String.Equals(item.FileName,file,StringComparison.OrdinalIgnoreCase)&&LoudnessAnalyzer.IsCompatibleAlgorithmVersion(item.AlgorithmVersion)) {cached=item;break;}
+   if(cached!=null&&cached.FileLength==length&&cached.LastWriteTimeUtcTicks==write.Ticks&&IsSha256(cached.Fingerprint))
     return RetargetAnalysis(cached,target);
-   LoudnessAnalysisResult measured=LoudnessAnalyzer.Analyze(path,target);
+   string fingerprint="";
+   if(cached!=null)
+   {
+    SongImportOperation hashOperation=new SongImportOperation();string hashDirectory=AppPaths.ImportJobPath(hashOperation.Id);Directory.CreateDirectory(hashDirectory);
+    try
+    {
+     AudioFileFingerprintResult hashResult=AudioImportValidator.Fingerprint(path,length,hashDirectory,0,hashOperation);
+     if(!hashResult.Success)throw new IOException(hashResult.Message.Length==0?"计算音频指纹失败。":hashResult.Message);
+     fingerprint=hashResult.Sha256;
+    }
+    finally{if(hashOperation.CanCleanup)try{EncryptedAudioConverter.CleanupTaskDirectory(hashOperation.Id);}catch{}}
+   }
+   FileInfo afterFingerprint=new FileInfo(path);
+   if(!afterFingerprint.Exists||afterFingerprint.Length!=length||afterFingerprint.LastWriteTimeUtc!=write)throw new IOException("检查音频指纹期间文件发生变化。");
+   if(cached!=null&&String.Equals(cached.Fingerprint,fingerprint,StringComparison.OrdinalIgnoreCase))
+   {
+    LoudnessAnalysis refreshed=CloneAnalysis(cached);refreshed.FileLength=length;refreshed.LastWriteTimeUtcTicks=write.Ticks;
+    return RetargetAnalysis(refreshed,target);
+   }
+   SongImportOperation analysisOperation=new SongImportOperation();string analysisDirectory=AppPaths.ImportJobPath(analysisOperation.Id);Directory.CreateDirectory(analysisDirectory);
+   AudioLoudnessAnalysisResult isolated;
+   try
+   {
+    isolated=AudioImportValidator.AnalyzeLoudness(path,length,target,analysisDirectory,0,analysisOperation);
+    if(!isolated.Success)throw new IOException(isolated.Message.Length==0?"隔离响度测量失败。":isolated.Message);
+   }
+   finally{if(analysisOperation.CanCleanup)try{EncryptedAudioConverter.CleanupTaskDirectory(analysisOperation.Id);}catch{}}
+   LoudnessAnalysisResult measured=isolated.Measurement;
    FileInfo after=new FileInfo(path);
    if(!after.Exists||after.Length!=length||after.LastWriteTimeUtc!=write)throw new IOException("分析期间音频文件发生变化。");
+   if(!measured.HasMeasurement)return null;
+   if(fingerprint.Length>0&&!String.Equals(fingerprint,isolated.Fingerprint,StringComparison.OrdinalIgnoreCase))throw new IOException("音频在指纹与响度测量之间发生变化。");
+   fingerprint=isolated.Fingerprint;
    return new LoudnessAnalysis{FileName=file,Fingerprint=fingerprint,IntegratedLufs=measured.IntegratedLufs,
-    PeakDbfs=measured.PeakDbfs,GainDb=measured.GainDb,TargetLufs=target,AlgorithmVersion=LoudnessAnalyzer.AlgorithmVersion,IsValidated=true};
+    PeakDbfs=measured.PeakDbfs,GainDb=measured.GainDb,TargetLufs=target,AlgorithmVersion=LoudnessAnalyzer.AlgorithmVersion,IsValidated=true,
+    FileLength=length,LastWriteTimeUtcTicks=write.Ticks};
+  }
+
+  private static bool IsSha256(string value)
+  {
+   if(String.IsNullOrWhiteSpace(value)||value.Length!=64)return false;
+   foreach(char ch in value)if(!Uri.IsHexDigit(ch))return false;
+   return true;
   }
 
   private static LoudnessAnalysis RetargetAnalysis(LoudnessAnalysis source,double target)
@@ -460,13 +510,14 @@ namespace BgmHotkey
    if(source==null)return null;
    return new LoudnessAnalysis{FileName=source.FileName,Fingerprint=source.Fingerprint,IntegratedLufs=source.IntegratedLufs,
     PeakDbfs=source.PeakDbfs,GainDb=LoudnessAnalyzer.CalculateGainDb(source.IntegratedLufs,source.PeakDbfs,target),
-    TargetLufs=target,AlgorithmVersion=LoudnessAnalyzer.AlgorithmVersion,IsValidated=true};
+    TargetLufs=target,AlgorithmVersion=LoudnessAnalyzer.AlgorithmVersion,IsValidated=true,FileLength=source.FileLength,LastWriteTimeUtcTicks=source.LastWriteTimeUtcTicks};
   }
 
   private static LoudnessAnalysis CloneAnalysis(LoudnessAnalysis source)
   {
    return new LoudnessAnalysis{FileName=source.FileName,Fingerprint=source.Fingerprint,IntegratedLufs=source.IntegratedLufs,
-    PeakDbfs=source.PeakDbfs,GainDb=source.GainDb,TargetLufs=source.TargetLufs,AlgorithmVersion=source.AlgorithmVersion,IsValidated=source.IsValidated};
+    PeakDbfs=source.PeakDbfs,GainDb=source.GainDb,TargetLufs=source.TargetLufs,AlgorithmVersion=source.AlgorithmVersion,IsValidated=source.IsValidated,
+    FileLength=source.FileLength,LastWriteTimeUtcTicks=source.LastWriteTimeUtcTicks};
   }
 
   private void ApplyLoudnessUpdates(LoudnessAnalysis[] updates,bool baselineReady,string baselineFile,string baselineFingerprint,double target,bool markInitialized)
@@ -491,14 +542,14 @@ namespace BgmHotkey
   {
    using(SaveFileDialog picker=new SaveFileDialog{Title="导出当前场景音效包",Filter="BGM 场景包 (*.wbgm)|*.wbgm",DefaultExt="wbgm",AddExtension=true,FileName=SafeSceneFileName(_settings.ActiveScene==null?"BGM场景":_settings.ActiveScene.Name)+".wbgm",OverwritePrompt=true})
    {
-    _capturingKey=true;DialogResult result;try{result=picker.ShowDialog(this);}finally{_capturingKey=false;}
+    SetKeyCapture("file-picker",true);DialogResult result;try{result=picker.ShowDialog(this);}finally{SetKeyCapture("file-picker",false);}
     if(result!=DialogResult.OK)return;
-    _packBusy=true;PublishWebState();string path=picker.FileName;
+    _packBusy=true;SetKeyCapture("pack-task",true);PublishWebState();string path=picker.FileName;
     System.Threading.ThreadPool.QueueUserWorkItem(delegate
     {
      string error="";try{SoundPackService.Export(_settings,path);}catch(Exception ex){error=ex.Message;}
-     if(IsDisposed||!IsHandleCreated)return;
-     try{BeginInvoke(new MethodInvoker(delegate{_packBusy=false;_capturingKey=false;NotifyWeb(error.Length==0?"音效包已导出。":(error.IndexOf("cancel",StringComparison.OrdinalIgnoreCase)>=0?"导出已取消。":"导出失败："+error));PublishWebState();}));}catch(InvalidOperationException){}
+     if(IsDisposed||!IsHandleCreated){SetKeyCapture("pack-task",false);return;}
+     try{BeginInvoke(new MethodInvoker(delegate{_packBusy=false;SetKeyCapture("pack-task",false);NotifyWeb(error.Length==0?"音效包已导出。":(error.IndexOf("cancel",StringComparison.OrdinalIgnoreCase)>=0?"导出已取消。":"导出失败："+error));PublishWebState();}));}catch(InvalidOperationException){SetKeyCapture("pack-task",false);}
     });
    }
   }
@@ -507,20 +558,20 @@ namespace BgmHotkey
   {
    using(OpenFileDialog picker=new OpenFileDialog{Title="选择要导入的 BGM 场景包",Filter="BGM 场景包 (*.zip;*.wbgm)|*.zip;*.wbgm|所有文件 (*.*)|*.*",CheckFileExists=true,Multiselect=false,RestoreDirectory=true})
    {
-    _capturingKey=true;DialogResult result;try{result=picker.ShowDialog(this);}finally{_capturingKey=false;}
+    SetKeyCapture("file-picker",true);DialogResult result;try{result=picker.ShowDialog(this);}finally{SetKeyCapture("file-picker",false);}
     if(result!=DialogResult.OK)return;
-    _packBusy=true;PublishWebState();string path=picker.FileName;
+    _packBusy=true;SetKeyCapture("pack-task",true);PublishWebState();string path=picker.FileName;
     System.Threading.ThreadPool.QueueUserWorkItem(delegate
     {
      SoundPackPreview preview=null;string error="";try{preview=SoundPackService.PrepareImport(path);}catch(Exception ex){error=ex.Message;}
-     if(IsDisposed||!IsHandleCreated){if(preview!=null)SoundPackService.CancelPrepared(preview.Token);return;}
+     if(IsDisposed||!IsHandleCreated){SetKeyCapture("pack-task",false);if(preview!=null)SoundPackService.CancelPrepared(preview.Token);return;}
      try{BeginInvoke(new MethodInvoker(delegate
      {
-      _packBusy=false;_capturingKey=false;
-      if(preview==null)NotifyWeb(error.IndexOf("cancel",StringComparison.OrdinalIgnoreCase)>=0?"导入预览已取消。":"无法预览音效包："+error);
+      _packBusy=false;
+      if(preview==null){SetKeyCapture("pack-task",false);NotifyWeb(error.IndexOf("cancel",StringComparison.OrdinalIgnoreCase)>=0?"导入预览已取消。":"无法预览音效包："+error);}
       else {_pendingImportToken=preview.Token;NotifyPackPreview(preview);}
       PublishWebState();
-     }));}catch(InvalidOperationException){if(preview!=null)SoundPackService.CancelPrepared(preview.Token);}
+     }));}catch(InvalidOperationException){SetKeyCapture("pack-task",false);if(preview!=null)SoundPackService.CancelPrepared(preview.Token);}
     });
    }
   }
@@ -533,20 +584,21 @@ namespace BgmHotkey
 
   private void ConfirmSoundPackImport()
   {
-   string token=_pendingImportToken;if(String.IsNullOrWhiteSpace(token)){NotifyWeb("音效包预览已失效，请重新导入。");return;}
-   _pendingImportToken="";_packBusy=true;_capturingKey=true;PublishWebState();
+   string token=_pendingImportToken;if(String.IsNullOrWhiteSpace(token)){SetKeyCapture("pack-task",false);NotifyWeb("音效包预览已失效，请重新导入。");return;}
+   _pendingImportToken="";_packBusy=true;SetKeyCapture("pack-task",true);PublishWebState();
    SavedTrack[] assets=(SavedTrack[])_settings.Tracks.Clone();List<string> names=new List<string>();foreach(ScenePreset scene in _settings.Scenes)names.Add(scene.Name);
    string[] sceneNames=names.ToArray();
    System.Threading.ThreadPool.QueueUserWorkItem(delegate
    {
     SoundPackImportPlan plan=null;string error="";try{plan=SoundPackService.BuildImportPlan(token,assets,sceneNames);}catch(Exception ex){error=ex.Message;}
-    if(IsDisposed||!IsHandleCreated){if(plan!=null)SoundPackService.RollbackFiles(plan);SoundPackService.CancelPrepared(token);return;}
+    if(IsDisposed||!IsHandleCreated){SetKeyCapture("pack-task",false);if(plan!=null)SoundPackService.RollbackFiles(plan);SoundPackService.CancelPrepared(token);return;}
     try{BeginInvoke(new MethodInvoker(delegate
     {
-     _packBusy=false;_capturingKey=false;
-     if(plan==null){SoundPackService.CancelPrepared(token);NotifyWeb(error.IndexOf("cancel",StringComparison.OrdinalIgnoreCase)>=0?"导入已取消。":"导入失败："+error);PublishWebState();return;}
+     _packBusy=false;
+     if(plan==null){SetKeyCapture("pack-task",false);SoundPackService.CancelPrepared(token);NotifyWeb(error.IndexOf("cancel",StringComparison.OrdinalIgnoreCase)>=0?"导入已取消。":"导入失败："+error);PublishWebState();return;}
      ApplySoundPackImport(plan,token);
-    }));}catch(InvalidOperationException){if(plan!=null)SoundPackService.RollbackFiles(plan);SoundPackService.CancelPrepared(token);}
+     SetKeyCapture("pack-task",false);
+    }));}catch(InvalidOperationException){SetKeyCapture("pack-task",false);if(plan!=null)SoundPackService.RollbackFiles(plan);SoundPackService.CancelPrepared(token);}
    });
   }
 
@@ -561,7 +613,7 @@ namespace BgmHotkey
    if(!SettingsStore.TrySave(_settings,out error))
    {
     _settings.Tracks=oldAssets;_settings.Scenes=oldScenes;_settings.LoudnessAnalyses=oldAnalyses;_settings.Normalize();
-    SoundPackService.RollbackFiles(plan);SoundPackService.CancelPrepared(token);NotifyWeb("导入未完成，配置保存失败，已回滚新文件："+error);PublishWebState();return;
+    SoundPackService.RollbackFilesInBackground(plan);SoundPackService.CancelPrepared(token);NotifyWeb("导入未完成，配置保存失败，正在安全清理本次新文件："+error);PublishWebState();return;
    }
    SoundPackService.CompleteImport(token);RefreshWebFiles();RebuildBindings();
     List<string> importedFiles=new List<string>();HashSet<string> importedFileSet=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -606,10 +658,10 @@ namespace BgmHotkey
      else if(operation.StartsWith("resize:")&&WindowState==FormWindowState.Normal){int edge;if(Int32.TryParse(operation.Substring(7),out edge)&&edge>=1&&edge<=8){ReleaseCapture();SendMessage(Handle,0x112,new IntPtr(0xF000+edge),IntPtr.Zero);}}
      return;
     }
-    if(_packBusy&&action!="cancelPack"){NotifyWeb("音效包任务正在执行，完成或取消后再继续。");return;}
+    if(_packBusy&&action!="cancelPack"&&action!="capture"){NotifyWeb("音效包任务正在执行，完成或取消后再继续。");return;}
     if(action=="painted") { if(!_webPresented) { _webPresented=true; if(_startupTimeout!=null)_startupTimeout.Stop(); _startupSurface.Visible=false; _web.BringToFront(); ShowInTaskbar=true; Opacity=1; BeginInvoke(new MethodInvoker(delegate{ResetStartupWebFocus();})); } return; }
     if(action=="ready") {RefreshWebFiles();InitializeLoudnessNormalization();PublishWebState();return;}
-    if(action=="capture") {_capturingKey=(message.ContainsKey("active")&&Convert.ToBoolean(message["active"]))||_songImportState!=null;return;}
+    if(action=="capture") {string reason=WebString(message,"reason");bool active=message.ContainsKey("active")&&Convert.ToBoolean(message["active"]);SetKeyCapture(reason,active);if(!active&&String.Equals(reason,"anchor-editor",StringComparison.OrdinalIgnoreCase))CancelAnchorInspection();return;}
     if(action=="play") {CancelContinuousRandom();TrackDefinition track=TrackCatalog.Find(id);if(track!=null)_engine.ToggleTrack(track,false);}
     else if(action=="stop") {CancelContinuousRandom();_engine.StopActiveTrack();}
     else if(action=="randomPlay")PlayRandom();
@@ -657,10 +709,10 @@ namespace BgmHotkey
     }
     else if(action=="randomFiles") {
      List<string> selected=new List<string>();HashSet<string> selectedSet=new HashSet<string>(StringComparer.OrdinalIgnoreCase);object raw;
+     Dictionary<string,string> availableFiles=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);foreach(string availableFile in _webFiles)availableFiles[availableFile]=availableFile;
      if(message.TryGetValue("files",out raw))foreach(object item in (System.Collections.IEnumerable)raw){
       string file=Convert.ToString(item);if(!AppSettings.IsAudioFileName(file))continue;
-      string availableFile=null;foreach(string candidateFile in _webFiles)if(String.Equals(candidateFile,file,StringComparison.OrdinalIgnoreCase)){availableFile=candidateFile;break;}
-      if(availableFile!=null&&selectedSet.Add(availableFile))selected.Add(availableFile);
+      string availableFile;if(availableFiles.TryGetValue(file,out availableFile)&&selectedSet.Add(availableFile))selected.Add(availableFile);
      }
      string[] old=_settings.ActiveRandomFiles??new string[0];string[] updated=selected.ToArray();
      if(!SameRandomFileSet(old,updated)){
@@ -675,25 +727,24 @@ namespace BgmHotkey
      string requested=RandomPlaybackMode.Normalize(WebString(message,"mode"));string oldMode=RandomPlaybackMode.Normalize(active.RandomMode);
      if(requested!=oldMode)
      {
-      CancelContinuousRandom();active.RandomMode=requested;string modeError;
+      active.RandomMode=requested;string modeError;
       if(!SettingsStore.TrySave(_settings,out modeError)){active.RandomMode=oldMode;NotifyWeb("保存随机播放模式失败："+modeError);}
-      else NotifyWeb(requested==RandomPlaybackMode.Continuous?"已启用随机连播。再次按随机快捷键或停止按钮可结束。":"已切换为普通随机播放。按一次播放一首，再按停止。");
+      else {CancelContinuousRandom();NotifyWeb(requested==RandomPlaybackMode.Continuous?"已启用随机连播。再次按随机快捷键或停止按钮可结束。":"已切换为普通随机播放。按一次播放一首，再按停止。");}
      }
     }
     else if(action=="sceneSwitch") {
-     CancelContinuousRandom();StopAnchorPreview();
      string oldScene=_settings.ActiveSceneId;
      if(!_settings.SetActiveScene(id)){NotifyWeb("找不到这个场景。");return;}
-     if(!_engine.StopActiveTrack()) { }
      string sceneError;if(!SettingsStore.TrySave(_settings,out sceneError)){_settings.SetActiveScene(oldScene);NotifyWeb("切换场景失败："+sceneError);return;}
+     CancelContinuousRandom();StopAnchorPreview();_engine.StopActiveTrack();
      _webEditorTrackId="";RefreshWebFiles();RebuildBindings();NotifyWeb("已切换场景："+_settings.ActiveScene.Name);
     }
     else if(action=="sceneCreate"||action=="sceneCopy") {
-     CancelContinuousRandom();StopAnchorPreview();
      string name=WebString(message,"name");if(String.IsNullOrWhiteSpace(name))name="新场景";
-     ScenePreset created=_settings.CreateScene(name,action=="sceneCopy");
-     string previous=_settings.ActiveSceneId;_settings.ActiveSceneId=created.Id;TrackCatalog.Configure(_settings);_engine.StopActiveTrack();
+     string previous=_settings.ActiveSceneId;ScenePreset created=_settings.CreateScene(name,action=="sceneCopy");
+     _settings.ActiveSceneId=created.Id;TrackCatalog.Configure(_settings);
      string sceneError;if(!SettingsStore.TrySave(_settings,out sceneError)){_settings.DeleteScene(created.Id);_settings.ActiveSceneId=previous;TrackCatalog.Configure(_settings);NotifyWeb("创建场景失败："+sceneError);return;}
+     CancelContinuousRandom();StopAnchorPreview();_engine.StopActiveTrack();
      _webEditorTrackId="";RefreshWebFiles();RebuildBindings();NotifyWeb(action=="sceneCopy"?"场景已复制。":"已创建空场景。");
     }
     else if(action=="sceneRename") {
@@ -705,15 +756,15 @@ namespace BgmHotkey
      if((_settings.Scenes??new ScenePreset[0]).Length<=1){NotifyWeb("至少保留一个场景。");return;}
      string previous=_settings.ActiveSceneId;List<ScenePreset> previousScenes=new List<ScenePreset>(_settings.Scenes);
      if(!_settings.DeleteScene(id)){NotifyWeb("找不到要删除的场景。");return;}
-     if(String.Equals(previous,id,StringComparison.OrdinalIgnoreCase)){CancelContinuousRandom();StopAnchorPreview();_engine.StopActiveTrack();}
      string sceneError;if(!SettingsStore.TrySave(_settings,out sceneError)){_settings.Scenes=previousScenes.ToArray();_settings.ActiveSceneId=previous;TrackCatalog.Configure(_settings);NotifyWeb("删除场景失败："+sceneError);return;}
+     if(String.Equals(previous,id,StringComparison.OrdinalIgnoreCase)){CancelContinuousRandom();StopAnchorPreview();_engine.StopActiveTrack();}
      _webEditorTrackId="";RefreshWebFiles();RebuildBindings();NotifyWeb("场景已删除，音频文件仍保留。");
     }
-    else if(action=="refreshFiles"){RefreshWebFiles();PublishWebState();}
+    else if(action=="refreshFiles"){RefreshWebFiles();_shuffleBag.Refresh(_settings.ActiveSceneId);QueueLoudnessAnalysis(_webFiles);PublishWebState();}
     else if(action=="exportPack")ExportSoundPack();
     else if(action=="importPack")BeginImportSoundPack();
     else if(action=="confirmPackImport")ConfirmSoundPackImport();
-    else if(action=="cancelPackImport") {if(!String.IsNullOrWhiteSpace(_pendingImportToken)){SoundPackService.CancelPrepared(_pendingImportToken);_pendingImportToken="";}NotifyWeb("已取消导入。");}
+    else if(action=="cancelPackImport") {if(!String.IsNullOrWhiteSpace(_pendingImportToken)){SoundPackService.CancelPrepared(_pendingImportToken);_pendingImportToken="";}SetKeyCapture("pack-task",false);NotifyWeb("已取消导入。");}
     else if(action=="cancelPack")SoundPackService.Cancel();
     else if(action=="devices") {_devices.Refresh();LoadDevices();_engine.ReconfigureDevices();NotifyWeb("设备已刷新。");}
     else if(action=="device") {

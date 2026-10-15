@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$projectRoot = Split-Path -Parent $PSScriptRoot
+$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $player = [System.IO.Path]::GetFullPath($PlayerPath)
 if (-not (Test-Path -LiteralPath $player -PathType Leaf)) { throw "Player executable was not found: $player" }
 $buildRoot = Join-Path $projectRoot 'local-only\test-build'
@@ -19,9 +19,9 @@ if (-not $compiler) { throw 'The .NET Framework C# compiler was not found.' }
 
 $fixture = Join-Path $testOutput 'ImportProcessFixture.exe'
 $smoke = Join-Path $testOutput 'ImportProcessIsolationSmoke.exe'
-& $compiler /nologo /langversion:5 /target:exe "/out:$fixture" (Join-Path $PSScriptRoot 'ImportProcessFixture.cs')
+& $compiler /nologo /langversion:5 /target:exe "/out:$fixture" (Join-Path $projectRoot 'tests\integration\import\ImportProcessFixture.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Import process fixture compilation failed.' }
-& $compiler /nologo /langversion:5 /target:exe /reference:System.dll /reference:System.Core.dll "/out:$smoke" (Join-Path $PSScriptRoot 'ImportProcessIsolationSmoke.cs')
+& $compiler /nologo /langversion:5 /target:exe /reference:System.dll /reference:System.Core.dll "/out:$smoke" (Join-Path $projectRoot 'tests\integration\import\ImportProcessIsolationSmoke.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Import process smoke compilation failed.' }
 
 & $smoke $player $fixture

@@ -1,0 +1,2 @@
+app/src/**/*.cs -text
+build.ps1 -text

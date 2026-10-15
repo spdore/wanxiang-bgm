@@ -111,18 +111,8 @@ namespace BgmHotkey
             HeadphoneDeviceName = "";
             CableDeviceName = "";
             MicrophoneDeviceName = "";
-#if PUBLIC_RELEASE
             Tracks = new SavedTrack[0];
             Bindings = new TrackBinding[0];
-#else
-            Bindings = new TrackBinding[]
-            {
-                new TrackBinding { TrackId = "catlei", Key = "I" },
-                new TrackBinding { TrackId = "thirteen", Key = "O" },
-                new TrackBinding { TrackId = "guoserver_hanxin", Key = "P" },
-                new TrackBinding { TrackId = "jindalai", Key = "Y" }
-            };
-#endif
         }
 
         public string GetKey(string trackId)
@@ -165,11 +155,14 @@ namespace BgmHotkey
         {
             ScenePreset scene = ActiveScene;
             if (scene == null) return new SavedTrack[0];
+            Dictionary<string, SavedTrack> assets = new Dictionary<string, SavedTrack>(StringComparer.OrdinalIgnoreCase);
+            foreach (SavedTrack asset in Tracks ?? new SavedTrack[0])
+                if (asset != null && !String.IsNullOrWhiteSpace(asset.Id) && !assets.ContainsKey(asset.Id)) assets.Add(asset.Id, asset);
             List<SavedTrack> result = new List<SavedTrack>();
             foreach (SceneTrack entry in scene.Tracks ?? new SceneTrack[0])
             {
-                SavedTrack asset = FindAsset(entry.TrackId);
-                if (asset == null) continue;
+                SavedTrack asset;
+                if (entry == null || !assets.TryGetValue(entry.TrackId ?? "", out asset)) continue;
                 result.Add(new SavedTrack { Id = asset.Id, Name = String.IsNullOrWhiteSpace(entry.Name) ? asset.Name : entry.Name, FileName = asset.FileName,
                     StartSeconds = entry.StartSeconds, EndSeconds = entry.EndSeconds });
             }
@@ -213,10 +206,18 @@ namespace BgmHotkey
 
         public LoudnessAnalysis FindAnalysis(string fileName)
         {
+            FileInfo currentFile;
+            try
+            {
+                currentFile = new FileInfo(AppPaths.TrackPath(fileName));
+                if (!currentFile.Exists) return null;
+            }
+            catch { return null; }
             foreach (LoudnessAnalysis item in LoudnessAnalyses ?? new LoudnessAnalysis[0])
                 if (item != null && String.Equals(item.FileName, fileName, StringComparison.OrdinalIgnoreCase) &&
                     item.IsValidated &&
                     String.Equals(item.AlgorithmVersion, LoudnessAnalyzer.AlgorithmVersion, StringComparison.Ordinal) &&
+                    item.FileLength == currentFile.Length && item.LastWriteTimeUtcTicks == currentFile.LastWriteTimeUtc.Ticks &&
                     LoudnessBaselineReady && Math.Abs(item.TargetLufs - LoudnessBaselineLufs) < 0.001) return item;
             return null;
         }
@@ -365,18 +366,6 @@ namespace BgmHotkey
             if (Tracks == null)
             {
                 Tracks = TrackCatalog.DefaultTracks();
-                AppSettings defaults = new AppSettings();
-                foreach (SavedTrack track in Tracks)
-                {
-                    bool exists = false;
-                    foreach (TrackBinding binding in Bindings)
-                        if (binding != null && binding.TrackId == track.Id) exists = true;
-                    string key = defaults.GetKey(track.Id);
-                    bool occupied = false;
-                    foreach (TrackBinding binding in Bindings)
-                        if (binding != null && binding.TrackId != "thirteen_216" && String.Equals(binding.Key, key, StringComparison.OrdinalIgnoreCase)) occupied = true;
-                    if (!exists) SetKey(track.Id, occupied ? "" : key);
-                }
             }
             List<SavedTrack> valid = new List<SavedTrack>();
             HashSet<string> ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -392,6 +381,8 @@ namespace BgmHotkey
                 valid.Add(track);
             }
             Tracks = valid.ToArray();
+            Dictionary<string, SavedTrack> assetsById = new Dictionary<string, SavedTrack>(StringComparer.OrdinalIgnoreCase);
+            foreach (SavedTrack asset in Tracks) assetsById.Add(asset.Id, asset);
             if (RandomKey == null) RandomKey = "";
             List<string> randomFiles = new List<string>();
             HashSet<string> seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -440,8 +431,8 @@ namespace BgmHotkey
                 HashSet<string> sceneTrackIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (SceneTrack entry in scene.Tracks ?? new SceneTrack[0])
                 {
-                    SavedTrack asset = entry == null ? null : FindAsset(entry.TrackId);
-                    if (asset == null || !sceneTrackIds.Add(entry.TrackId)) continue;
+                    SavedTrack asset;
+                    if (entry == null || !assetsById.TryGetValue(entry.TrackId ?? "", out asset) || !sceneTrackIds.Add(entry.TrackId)) continue;
                     if (Double.IsNaN(entry.StartSeconds) || Double.IsInfinity(entry.StartSeconds) || entry.StartSeconds < 0) entry.StartSeconds = 0;
                     if (entry.Name != null && entry.Name.Length > 256) entry.Name = entry.Name.Substring(0, 256);
                     if (entry.EndSeconds.HasValue && (Double.IsNaN(entry.EndSeconds.Value) || Double.IsInfinity(entry.EndSeconds.Value) || entry.EndSeconds.Value <= entry.StartSeconds)) entry.EndSeconds = null;
@@ -486,6 +477,24 @@ namespace BgmHotkey
                     item.TargetLufs >= -70 && item.TargetLufs <= 10 && item.GainDb >= -60 && item.GainDb <= 12 &&
                     item.IntegratedLufs >= -100 && item.IntegratedLufs <= 10 && item.PeakDbfs >= -100 && item.PeakDbfs <= 0) analyses.Add(item);
             LoudnessAnalyses = analyses.ToArray();
+            if (LoudnessBaselineReady)
+            {
+                bool baselineVerified = false;
+                foreach (LoudnessAnalysis item in LoudnessAnalyses)
+                    if (item.IsValidated && String.Equals(item.FileName, LoudnessBaselineFileName, StringComparison.OrdinalIgnoreCase) &&
+                        String.Equals(item.Fingerprint, LoudnessBaselineFingerprint, StringComparison.OrdinalIgnoreCase) &&
+                        String.Equals(item.AlgorithmVersion, LoudnessAnalyzer.AlgorithmVersion, StringComparison.Ordinal) &&
+                        item.FileLength > 0 && item.LastWriteTimeUtcTicks > 0 &&
+                        Math.Abs(item.IntegratedLufs - LoudnessBaselineLufs) < 0.001)
+                    { baselineVerified = true; break; }
+                if (!baselineVerified)
+                {
+                    LoudnessBaselineReady = false;
+                    LoudnessBaselineFileName = "";
+                    LoudnessBaselineFingerprint = "";
+                    LoudnessBaselineLufs = LoudnessAnalyzer.TargetLufs;
+                }
+            }
             TrackCatalog.Configure(this);
         }
 
@@ -571,6 +580,8 @@ namespace BgmHotkey
         public double TargetLufs { get; set; }
         public string AlgorithmVersion { get; set; }
         public bool IsValidated { get; set; }
+        public long FileLength { get; set; }
+        public long LastWriteTimeUtcTicks { get; set; }
     }
 
     internal sealed class TrackDefinition
@@ -603,16 +614,7 @@ namespace BgmHotkey
 
         public static SavedTrack[] DefaultTracks()
         {
-#if PUBLIC_RELEASE
             return new SavedTrack[0];
-#else
-            return new SavedTrack[] {
-                new SavedTrack { Id = "catlei", Name = "猫雷", FileName = "猫雷.mp3" },
-                new SavedTrack { Id = "thirteen", Name = "夺命十三枪", FileName = "夺命十三枪.mp3" },
-                new SavedTrack { Id = "guoserver_hanxin", Name = "国服韩信", FileName = "国服韩信.mp3" },
-                new SavedTrack { Id = "jindalai", Name = "金达莱花", FileName = "金达莱花.mp3" }
-            };
-#endif
         }
 
         public static void Configure(AppSettings settings)
@@ -665,6 +667,8 @@ namespace BgmHotkey
 
     internal static class SettingsStore
     {
+        private static bool _loadedFromBackup;
+
         public static AppSettings Load()
         {
             foreach (string path in new string[] { AppPaths.SettingsFile, AppPaths.SettingsFile + ".bak" })
@@ -679,6 +683,7 @@ namespace BgmHotkey
                         settings = (AppSettings)serializer.Deserialize(stream);
                     }
                     settings.Normalize();
+                    _loadedFromBackup = String.Equals(path, AppPaths.SettingsFile + ".bak", StringComparison.OrdinalIgnoreCase);
                     if (settings.NeedsSceneMigration)
                     {
                         string migrationError;
@@ -712,8 +717,14 @@ namespace BgmHotkey
                 using (FileStream stream = File.Create(temporary))
                     serializer.Serialize(stream, settings);
                 if (File.Exists(AppPaths.SettingsFile))
-                    File.Replace(temporary, AppPaths.SettingsFile, AppPaths.SettingsFile + ".bak");
+                {
+                    if (_loadedFromBackup)
+                        File.Replace(temporary, AppPaths.SettingsFile, null);
+                    else
+                        File.Replace(temporary, AppPaths.SettingsFile, AppPaths.SettingsFile + ".bak");
+                }
                 else File.Move(temporary, AppPaths.SettingsFile);
+                _loadedFromBackup = false;
                 return true;
             }
             catch (Exception ex)

@@ -25,7 +25,7 @@ The timeout-fix checks use generated fixtures in disposable `TEST_BUILD` directo
 
 Process fault injection covered a hung converter, user cancellation before start/during execution/near result return, child process termination, an inherited pipe held open, output flooding, exit-zero fixtures with malformed or absent result protocol output, a progress-based idle timeout, and a subsequent import after timeout/cancellation. The tests assert bounded return, child/descendant reaping, bounded output capture, batch state remaining uncancelled on per-file timeout, and ability to run the next file. These checks do not reproduce the user's real `.mflac`; no user sample was supplied. Hardware audio, actual EXE window interaction, clean-system installation, and real platform-file compatibility were not tested.
 
-The import-timeout test results and size comparison below describe the full 1.9.7 build before the follow-up anchor-editor UI-only update. The current player still uses assembly version 1.9.7.0; the UI update removes the editor's playback-position line and does not change the converter or validation paths.
+The import-timeout test results and size comparison below describe the full 1.9.7 build before the follow-up anchor-editor UI-only update. The current 1.9.8 player retains the same converter and validation paths; the 1.9.8 change is a stability and project-structure release.
 
 | Artifact | This build | Previous local artifact | Change |
 | --- | ---: | ---: | ---: |

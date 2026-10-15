@@ -9,6 +9,9 @@ namespace BgmHotkey
     // The separate streaming reader feeds only the app's virtual-cable music mix.
     internal sealed class DirectMp3Player : IDisposable
     {
+#if TEST_BUILD
+        internal static Func<string, int> CommandOverrideForTests;
+#endif
         [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
         private static extern int mciSendString(string command, StringBuilder returnValue, int returnLength, IntPtr callback);
 
@@ -21,8 +24,9 @@ namespace BgmHotkey
         private double _endSeconds;
         private double _trackGain = 1.0;
         private bool _opened;
+        private bool _started;
 
-        public DirectMp3Player(string path, double startSeconds, double? endSeconds, int sliderVolume, double trackGain)
+        public DirectMp3Player(string path, int sliderVolume, double trackGain)
         {
             if (String.IsNullOrWhiteSpace(path))
                 throw new ArgumentException("音频文件路径为空。", "path");
@@ -35,12 +39,22 @@ namespace BgmHotkey
             {
                 Send("set " + _alias + " time format milliseconds");
                 SetSliderVolume(sliderVolume);
-                PlayFrom(startSeconds, endSeconds);
             }
             catch
             {
                 Close();
                 throw;
+            }
+        }
+
+        public void Start(double startSeconds, double? endSeconds)
+        {
+            lock (_gate)
+            {
+                if (!_opened) throw new ObjectDisposedException("DirectMp3Player");
+                if (_started) return;
+                PlayFrom(startSeconds, endSeconds);
+                _started = true;
             }
         }
 
@@ -156,7 +170,13 @@ namespace BgmHotkey
 
         private void Send(string command)
         {
-            int result = mciSendString(command, null, 0, IntPtr.Zero);
+            int result;
+#if TEST_BUILD
+            Func<string, int> testOverride = CommandOverrideForTests;
+            if (testOverride != null) result = testOverride(command);
+            else
+#endif
+            result = mciSendString(command, null, 0, IntPtr.Zero);
             if (result != 0)
                 throw CreateMciException(command, result);
         }

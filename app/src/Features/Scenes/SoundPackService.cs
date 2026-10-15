@@ -70,6 +70,8 @@ namespace BgmHotkey
         public string StagedPath;
         public string DestinationPath;
         public string Sha256;
+        public long FileLength;
+        public long LastWriteTimeUtcTicks;
     }
 
     internal sealed class SoundPackImportPlan
@@ -90,6 +92,8 @@ namespace BgmHotkey
         private static readonly object Gate = new object();
         private static readonly Dictionary<string, PreparedPack> Prepared = new Dictionary<string, PreparedPack>(StringComparer.OrdinalIgnoreCase);
         private static CancellationTokenSource _cancellation;
+        private static CancellationTokenRegistration _cancelRegistration;
+        private static SongImportOperation _activeOperation;
         private static bool _busy;
         private static string _progress = "";
 
@@ -112,12 +116,16 @@ namespace BgmHotkey
 
         public static void Cancel()
         {
-            lock (Gate) if (_cancellation != null) _cancellation.Cancel();
+            CancellationTokenSource cancellation;
+            lock (Gate) cancellation = _cancellation;
+            if (cancellation != null) cancellation.Cancel();
         }
 
         public static void Export(AppSettings settings, string destinationPath)
         {
-            CancellationToken token = Begin("正在准备场景包导出…");
+            SongImportOperation operation;
+            CancellationToken token = Begin("正在准备场景包导出…", out operation);
+            string taskDirectory = OperationDirectory(operation);
             string temporary = destinationPath + ".tmp-" + Guid.NewGuid().ToString("N");
             try
             {
@@ -126,8 +134,9 @@ namespace BgmHotkey
                 Dictionary<string, SoundPackAsset> assets = new Dictionary<string, SoundPackAsset>(StringComparer.OrdinalIgnoreCase);
                 Dictionary<string, string> paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 SoundPackManifest manifest = new SoundPackManifest { Version = 1, SceneName = SafeText(scene.Name, 128), RandomKey = scene.RandomKey ?? "", RandomMode = RandomPlaybackMode.Normalize(scene.RandomMode) };
-                foreach (SavedTrack track in settings.ActiveTracks()) AddExportAsset(settings, manifest, assets, paths, track.Id, track.FileName, track.Name);
-                foreach (string file in scene.RandomFileNames ?? new string[0]) AddExportAsset(settings, manifest, assets, paths, "", file, Path.GetFileNameWithoutExtension(file));
+                int hashIndex = 0;
+                foreach (SavedTrack track in settings.ActiveTracks()) AddExportAsset(settings, manifest, assets, paths, track.Id, track.FileName, track.Name, operation, taskDirectory, ++hashIndex);
+                foreach (string file in scene.RandomFileNames ?? new string[0]) AddExportAsset(settings, manifest, assets, paths, "", file, Path.GetFileNameWithoutExtension(file), operation, taskDirectory, ++hashIndex);
                 if (assets.Count == 0) throw new InvalidOperationException("当前场景没有可导出的音频文件。");
                 if (assets.Count > MaximumAssets) throw new InvalidDataException("场景包最多可包含 500 个音频文件。");
 
@@ -202,7 +211,9 @@ namespace BgmHotkey
 
         public static SoundPackPreview PrepareImport(string archivePath)
         {
-            CancellationToken token = Begin("正在安全检查音效包…");
+            SongImportOperation operation;
+            CancellationToken token = Begin("正在安全检查音效包…", out operation);
+            string taskDirectory = OperationDirectory(operation);
             string stage = Path.Combine(Path.GetTempPath(), "WanxiangBgmPack-" + Guid.NewGuid().ToString("N"));
             try
             {
@@ -253,6 +264,7 @@ namespace BgmHotkey
                     List<string> warnings = new List<string>();
                     long actualBytes = 0;
                     Dictionary<string, double> durations = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                    int hashIndex = 0;
                     foreach (SoundPackAsset asset in manifest.Assets)
                     {
                         token.ThrowIfCancellationRequested();
@@ -264,9 +276,13 @@ namespace BgmHotkey
                             actualBytes += CopyBounded(source, destination, MaximumEntryBytes, token, delegate(long count)
                             { currentFileBytes += count; SetProgress("正在展开音频：" + Path.GetFileName(asset.FileName) + " · " + FormatBytes(actualBytes + currentFileBytes)); });
                         if (actualBytes > MaximumExpandedBytes) throw new InvalidDataException("实际展开大小超过 2 GiB。");
-                        string hash = LoudnessAnalyzer.Fingerprint(target);
-                        if (!String.Equals(hash, asset.Sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("文件校验失败：" + asset.FileName);
-                        durations[asset.Id] = AudioFormatCatalog.ProbeDurationSeconds(target);
+                        FileInfo stagedInfo = new FileInfo(target);
+                        AudioFileFingerprintResult hashResult = AudioImportValidator.Fingerprint(target, stagedInfo.Length, taskDirectory, ++hashIndex, operation);
+                        if (!hashResult.Success) throw new IOException(hashResult.Message.Length == 0 ? "音效包文件指纹检查失败。" : hashResult.Message);
+                        if (!String.Equals(hashResult.Sha256, asset.Sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("文件校验失败：" + asset.FileName);
+                        AudioImportValidationResult probe = AudioImportValidator.Validate(target, stagedInfo.Length, false, taskDirectory, ++hashIndex, operation);
+                        if (probe.Status != AudioImportValidationStatus.Valid) throw new InvalidDataException(probe.Message.Length == 0 ? "音频时长检查失败：" + asset.FileName : probe.Message);
+                        durations[asset.Id] = probe.DurationSeconds;
                     }
                     CleanAnchorsAndKeys(manifest, durations, warnings);
                     string tokenId = Guid.NewGuid().ToString("N");
@@ -287,7 +303,9 @@ namespace BgmHotkey
 
         public static SoundPackImportPlan BuildImportPlan(string tokenId, SavedTrack[] existingAssets, string[] existingSceneNames)
         {
-            CancellationToken token = Begin("正在导入场景和音频文件…");
+            SongImportOperation operation;
+            CancellationToken token = Begin("正在导入场景和音频文件…", out operation);
+            string taskDirectory = OperationDirectory(operation);
             PreparedPack prepared;
             List<SoundPackFileCopy> created = new List<SoundPackFileCopy>();
             try
@@ -302,10 +320,15 @@ namespace BgmHotkey
                     sameFile.Add(item);
                 }
                 Dictionary<string, List<SavedTrack>> knownTracksByHash = new Dictionary<string, List<SavedTrack>>(StringComparer.OrdinalIgnoreCase);
+                int operationIndex = 0;
                 foreach (string file in RandomFileCatalog.Scan(AppPaths.TrackPath("")))
                 {
                     token.ThrowIfCancellationRequested();
-                    string hash = LoudnessAnalyzer.Fingerprint(AppPaths.TrackPath(file));
+                    string localPath = AppPaths.TrackPath(file);
+                    FileInfo localInfo = new FileInfo(localPath);
+                    AudioFileFingerprintResult localHash = AudioImportValidator.Fingerprint(localPath, localInfo.Length, taskDirectory, ++operationIndex, operation);
+                    if (!localHash.Success) throw new IOException(localHash.Message.Length == 0 ? "曲库文件指纹检查失败。" : localHash.Message);
+                    string hash = localHash.Sha256;
                     if (!local.ContainsKey(hash)) local.Add(hash, new LocalFile { FileName = file });
                     List<SavedTrack> known;
                     if (tracksByFile.TryGetValue(file, out known))
@@ -335,9 +358,20 @@ namespace BgmHotkey
                             string staged = Path.Combine(prepared.Directory, asset.FileName);
                             string destination = AppPaths.TrackPath(fileName);
                             int fileIndex = ++index;
-                            CopyCreateNew(staged, destination, token, delegate(long copied, long total)
-                            { SetProgress("正在复制音频文件 " + fileIndex + " / " + prepared.Manifest.Assets.Length + " · " + FormatBytes(copied) + " / " + FormatBytes(total)); },
-                            delegate { created.Add(new SoundPackFileCopy { StagedPath = staged, DestinationPath = destination, Sha256 = asset.Sha256 }); });
+                            FileInfo stagedInfo = new FileInfo(staged);
+                            ImportFilePreparationResult copy = AudioImportValidator.PrepareLibraryCopy(staged, stagedInfo.Length, fileIndex, operation);
+                            if (copy.Status != ImportFilePreparationStatus.Prepared)
+                                throw new IOException(copy.Message.Length == 0 ? "复制音频文件到曲库失败。" : copy.Message);
+                            try
+                            {
+                                token.ThrowIfCancellationRequested();
+                                File.Move(copy.PreparedPath, destination);
+                                FileInfo importedInfo = new FileInfo(destination);
+                                created.Add(new SoundPackFileCopy { StagedPath = staged, DestinationPath = destination, Sha256 = asset.Sha256,
+                                    FileLength = importedInfo.Length, LastWriteTimeUtcTicks = importedInfo.LastWriteTimeUtc.Ticks });
+                                SetProgress("已复制音频文件 " + fileIndex + " / " + prepared.Manifest.Assets.Length + " · " + FormatBytes(importedInfo.Length));
+                            }
+                            catch { try { if (File.Exists(copy.PreparedPath)) File.Delete(copy.PreparedPath); } catch { } throw; }
                             hashToName[asset.Sha256] = fileName;
                             local[asset.Sha256] = new LocalFile { FileName = fileName };
                         }
@@ -388,19 +422,9 @@ namespace BgmHotkey
                     if (targetNames.ContainsKey(assetId) && !randomFiles.Contains(targetNames[assetId])) randomFiles.Add(targetNames[assetId]);
                 scene.RandomFileNames = randomFiles.ToArray();
 
-                List<LoudnessAnalysis> importedAnalysis = new List<LoudnessAnalysis>();
-                foreach (SoundPackAnalysis item in prepared.Manifest.Loudness ?? new SoundPackAnalysis[0])
-                {
-                    SoundPackAsset asset = FindManifestAsset(prepared.Manifest, item.AssetId);
-                    if (asset == null || !LoudnessAnalyzer.IsCompatibleAlgorithmVersion(item.AlgorithmVersion) ||
-                        Double.IsNaN(item.TargetLufs) || Double.IsInfinity(item.TargetLufs) || Double.IsNaN(item.GainDb) || Double.IsInfinity(item.GainDb) ||
-                        Double.IsNaN(item.PeakDbfs) || Double.IsInfinity(item.PeakDbfs) || item.TargetLufs < -70 || item.TargetLufs > 10 ||
-                        item.PeakDbfs < -100 || item.PeakDbfs > 0 || item.GainDb < -60 || item.GainDb > 12 ||
-                        Double.IsNaN(item.IntegratedLufs) || Double.IsInfinity(item.IntegratedLufs) || item.IntegratedLufs < -100 || item.IntegratedLufs > 10) continue;
-                    importedAnalysis.Add(new LoudnessAnalysis { FileName = targetNames[item.AssetId], Fingerprint = asset.Sha256, IntegratedLufs = item.IntegratedLufs, PeakDbfs = item.PeakDbfs,
-                        GainDb = item.GainDb, TargetLufs = item.TargetLufs, AlgorithmVersion = item.AlgorithmVersion, IsValidated = true });
-                }
-                return new SoundPackImportPlan { Scene = scene, NewAssets = newAssets.ToArray(), NewAnalyses = importedAnalysis.ToArray(), CreatedFiles = created, Warnings = prepared.Warnings };
+                // Pack-provided loudness is advisory only. Imported local files are
+                // measured by the app's background analyzer after the settings commit.
+                return new SoundPackImportPlan { Scene = scene, NewAssets = newAssets.ToArray(), NewAnalyses = new LoudnessAnalysis[0], CreatedFiles = created, Warnings = prepared.Warnings };
             }
             catch
             {
@@ -423,13 +447,33 @@ namespace BgmHotkey
         public static void RollbackFiles(SoundPackImportPlan plan)
         {
             if (plan == null || plan.CreatedFiles == null) return;
+            SongImportOperation operation = new SongImportOperation();
+            string taskDirectory = OperationDirectory(operation);
+            int index = 0;
             foreach (SoundPackFileCopy copy in plan.CreatedFiles)
                 try
                 {
-                    if (File.Exists(copy.DestinationPath) && String.Equals(LoudnessAnalyzer.Fingerprint(copy.DestinationPath), copy.Sha256, StringComparison.OrdinalIgnoreCase))
-                        File.Delete(copy.DestinationPath);
+                    FileInfo info = new FileInfo(copy.DestinationPath);
+                    if (info.Exists && info.Length == copy.FileLength && info.LastWriteTimeUtc.Ticks == copy.LastWriteTimeUtcTicks)
+                    {
+                        AudioFileFingerprintResult fingerprint = AudioImportValidator.Fingerprint(copy.DestinationPath, info.Length, taskDirectory, ++index, operation);
+                        if (fingerprint.Success && String.Equals(fingerprint.Sha256, copy.Sha256, StringComparison.OrdinalIgnoreCase))
+                            File.Delete(copy.DestinationPath);
+                    }
                 }
-                catch { }
+                catch (Exception ex) { AppPaths.Log("音效包失败回滚未删除文件：" + ex.Message); }
+            if (operation.CanCleanup)
+                try { EncryptedAudioConverter.CleanupTaskDirectory(operation.Id); } catch { }
+        }
+
+        public static void RollbackFilesInBackground(SoundPackImportPlan plan)
+        {
+            if (plan == null || plan.CreatedFiles == null || plan.CreatedFiles.Count == 0) return;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                try { RollbackFiles(plan); }
+                catch (Exception ex) { AppPaths.Log("后台回滚音效包文件失败：" + ex); }
+            });
         }
 
         public static void CancelPrepared(string tokenId)
@@ -438,13 +482,16 @@ namespace BgmHotkey
         }
 
         private static void AddExportAsset(AppSettings settings, SoundPackManifest manifest, Dictionary<string, SoundPackAsset> assets,
-            Dictionary<string, string> paths, string trackId, string fileName, string displayName)
+            Dictionary<string, string> paths, string trackId, string fileName, string displayName, SongImportOperation operation, string taskDirectory, int index)
         {
             if (assets.ContainsKey(fileName)) return;
             if (!AppSettings.IsAudioFileName(fileName)) throw new InvalidDataException("曲库包含不支持的文件名：" + fileName);
             string path = AppPaths.TrackPath(fileName);
             if (!File.Exists(path)) throw new FileNotFoundException("场景引用的音频文件不存在。", fileName);
-            string hash = LoudnessAnalyzer.Fingerprint(path);
+            FileInfo info = new FileInfo(path);
+            AudioFileFingerprintResult result = AudioImportValidator.Fingerprint(path, info.Length, taskDirectory, index, operation);
+            if (!result.Success) throw new IOException(result.Message.Length == 0 ? "计算导出音频指纹失败。" : result.Message);
+            string hash = result.Sha256;
             SoundPackAsset asset = new SoundPackAsset { Id = "asset_" + Guid.NewGuid().ToString("N"), FileName = fileName,
                 DisplayName = SafeText(displayName, 256), Sha256 = hash };
             assets.Add(fileName, asset); paths.Add(asset.Id, path);
@@ -595,22 +642,44 @@ namespace BgmHotkey
             }
         }
 
-        private static CancellationToken Begin(string initialProgress)
+        private static CancellationToken Begin(string initialProgress, out SongImportOperation operation)
         {
             lock (Gate)
             {
                 if (_busy) throw new InvalidOperationException("已有音效包操作正在进行。");
-                _busy = true; _progress = initialProgress; _cancellation = new CancellationTokenSource(); return _cancellation.Token;
+                operation = new SongImportOperation();
+                Directory.CreateDirectory(AppPaths.ImportJobPath(operation.Id));
+                _busy = true; _progress = initialProgress; _cancellation = new CancellationTokenSource();
+                _activeOperation = operation;
+                operation.StageChanged += delegate(int index, string stage) { SetProgress(stage); };
+                SongImportOperation active = operation;
+                _cancelRegistration = _cancellation.Token.Register(delegate { active.Cancel(); });
+                return _cancellation.Token;
             }
         }
 
         private static void End()
         {
+            SongImportOperation operation;
             lock (Gate)
             {
                 _busy = false;
+                operation = _activeOperation;
+                _activeOperation = null;
+                _cancelRegistration.Dispose();
                 if (_cancellation != null) { _cancellation.Dispose(); _cancellation = null; }
             }
+            if (operation != null && operation.CanCleanup)
+                try { EncryptedAudioConverter.CleanupTaskDirectory(operation.Id); }
+                catch (DirectoryNotFoundException) { }
+                catch (IOException ex) { AppPaths.Log("清理音效包子进程任务目录失败：" + ex.Message); }
+        }
+
+        private static string OperationDirectory(SongImportOperation operation)
+        {
+            string directory = AppPaths.ImportJobPath(operation.Id);
+            Directory.CreateDirectory(directory);
+            return directory;
         }
 
         private static void SetProgress(string text) { lock (Gate) _progress = text ?? ""; }

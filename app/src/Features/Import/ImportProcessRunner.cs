@@ -69,6 +69,16 @@ namespace BgmHotkey
             return ScaledTimeout(fileBytes, 300000L, 8000L, 1200000L);
         }
 
+        public static int FingerprintTotalMilliseconds(long fileBytes)
+        {
+            return ScaledTimeout(fileBytes, 120000L, 4000L, 1800000L);
+        }
+
+        public static int LoudnessAnalysisTotalMilliseconds(long fileBytes)
+        {
+            return ScaledTimeout(fileBytes, 300000L, 12000L, 3600000L);
+        }
+
         private static int ScaledTimeout(long fileBytes, long baseMilliseconds, long perMiBMilliseconds, long maximumMilliseconds)
         {
             long nonNegativeBytes = Math.Max(0L, fileBytes);

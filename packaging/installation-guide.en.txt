@@ -1,5 +1,5 @@
 Wanxiang BGM Player — Windows x64 Installation Guide
-Version: 1.9.7
+Version: 1.9.8
 
 INSTALLATION
 Run the installer, choose an installation folder, and follow the setup prompts. Setup reuses an installed Microsoft WebView2 Runtime. If the runtime is missing, the included official Microsoft Bootstrapper downloads and installs it, so an internet connection is required. The official VB-CABLE driver package is included. Windows requires administrator approval to install the driver and may require a restart. In QQ or a game, select CABLE Output as the microphone or recording device.
@@ -42,4 +42,4 @@ The player includes the offline conversion helper, so users do not need to insta
 Microsoft's official WebView2 Evergreen Bootstrapper installs the runtime only when it is missing; that case requires an internet connection. VB-CABLE is provided by VB-Audio at https://vb-audio.com/Cable/. The official driver package is distributed unchanged and may require administrator approval and a restart. Uninstalling the player does not remove the shared VB-CABLE driver or WebView2 Runtime.
 
 USER DATA
-Settings and imported songs are stored in %LOCALAPPDATA%\BgmHotkeyShare. The installer contains no music library, recordings, developer-machine paths, personal device names, or user configuration. Uninstalling the player preserves songs and settings.
+Settings and imported songs are stored for your Windows user account and are preserved when the player is upgraded or uninstalled.

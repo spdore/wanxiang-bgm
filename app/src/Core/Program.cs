@@ -17,6 +17,10 @@ namespace BgmHotkey
                 return AudioImportValidator.RunReuseWorker(args);
             if (args != null && args.Length > 0 && args[0] == "--import-inspect")
                 return AudioImportValidator.RunInspectWorker(args);
+            if (args != null && args.Length > 0 && args[0] == "--import-hash")
+                return AudioImportValidator.RunHashWorker(args);
+            if (args != null && args.Length > 0 && args[0] == "--import-loudness")
+                return AudioImportValidator.RunLoudnessWorker(args);
             if (args != null && args.Length > 0 && args[0] == "--import-extract-helper")
                 return EncryptedAudioConverter.RunHelperExtractionWorker(args);
 

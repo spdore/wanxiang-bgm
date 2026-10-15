@@ -82,8 +82,152 @@ namespace BgmHotkey
         public bool CleanupSafe = true;
     }
 
+    internal sealed class AudioFileFingerprintResult
+    {
+        public bool Success;
+        public string Sha256 = "";
+        public string Message = "";
+        public long ElapsedMilliseconds;
+        public bool CleanupSafe = true;
+    }
+
+    internal sealed class AudioLoudnessAnalysisResult
+    {
+        public bool Success;
+        public LoudnessAnalysisResult Measurement;
+        public string Fingerprint = "";
+        public string Message = "";
+        public long ElapsedMilliseconds;
+        public bool CleanupSafe = true;
+    }
+
     internal static class AudioImportValidator
     {
+        public static AudioLoudnessAnalysisResult AnalyzeLoudness(string path, long fileLength, double targetLufs, string taskDirectory, int index, SongImportOperation operation)
+        {
+            if (operation == null) throw new ArgumentNullException("operation");
+            if (operation.IsCancelled) return new AudioLoudnessAnalysisResult { Message = "已取消。" };
+            int timeout = ImportTimeoutPolicy.LoudnessAnalysisTotalMilliseconds(fileLength);
+            string resultPath = Path.Combine(taskDirectory, "loudness_" + index.ToString("D4") + "_" + Guid.NewGuid().ToString("N") + ".json");
+            string executable = Assembly.GetExecutingAssembly().Location;
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = executable,
+                Arguments = "--import-loudness " + ImportProcessRunner.QuoteArgument(path) + " " +
+                    ImportProcessRunner.QuoteArgument(resultPath) + " " + fileLength.ToString(System.Globalization.CultureInfo.InvariantCulture) + " " +
+                    targetLufs.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + " " +
+                    Math.Max(1000, timeout - 2000).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                WorkingDirectory = Path.GetDirectoryName(executable),
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+            operation.SetStage(index, "隔离测量响度");
+            ImportProcessResult process = ImportProcessRunner.Run(startInfo, operation, timeout, 0);
+            AudioLoudnessAnalysisResult result = new AudioLoudnessAnalysisResult { ElapsedMilliseconds = process.ElapsedMilliseconds, CleanupSafe = process.CleanupSafe };
+            if (process.Status == ImportProcessStatus.Cancelled || operation.IsCancelled)
+            {
+                result.Message = "已取消。";
+                SafeDelete(resultPath, operation.CanCleanup);
+                return result;
+            }
+            if (process.Status == ImportProcessStatus.TimedOut)
+            {
+                result.Message = "响度测量超过时间上限。";
+                SafeDelete(resultPath, process.CleanupSafe && operation.CanCleanup);
+                return result;
+            }
+            if (process.Status != ImportProcessStatus.Exited || !process.CleanupSafe || process.ExitCode != 0)
+            {
+                result.Message = "响度测量工作进程未能安全完成。";
+                return result;
+            }
+            try
+            {
+                Dictionary<string, object> response = ReadSmallResult(resultPath);
+                string status = ReadText(response, "status");
+                if (status != "measured" && status != "noMeasurement") throw new InvalidDataException("响度测量结果无效。");
+                string hash = ReadText(response, "sha256");
+                if (hash.Length != 64) throw new InvalidDataException("响度测量结果缺少指纹。");
+                foreach (char ch in hash) if (!Uri.IsHexDigit(ch)) throw new InvalidDataException("响度测量指纹格式无效。");
+                result.Fingerprint = hash;
+                if (status == "measured")
+                {
+                    result.Measurement = new LoudnessAnalysisResult
+                    {
+                        HasMeasurement = true,
+                        IntegratedLufs = System.Convert.ToDouble(response["integratedLufs"], System.Globalization.CultureInfo.InvariantCulture),
+                        PeakDbfs = System.Convert.ToDouble(response["peakDbfs"], System.Globalization.CultureInfo.InvariantCulture),
+                        GainDb = System.Convert.ToDouble(response["gainDb"], System.Globalization.CultureInfo.InvariantCulture)
+                    };
+                }
+                else result.Measurement = new LoudnessAnalysisResult { HasMeasurement = false, IntegratedLufs = -100, PeakDbfs = -100, GainDb = 0 };
+                result.Success = true;
+            }
+            catch (Exception ex) { result.Message = "响度测量结果无效：" + ex.GetType().Name; }
+            finally { SafeDelete(resultPath, operation.CanCleanup); }
+            return result;
+        }
+
+        public static AudioFileFingerprintResult Fingerprint(string path, long fileLength, string taskDirectory, int index, SongImportOperation operation)
+        {
+            if (operation == null) throw new ArgumentNullException("operation");
+            if (operation.IsCancelled) return new AudioFileFingerprintResult { Message = "已取消。" };
+            string resultPath = Path.Combine(taskDirectory, "hash_" + index.ToString("D4") + "_" + Guid.NewGuid().ToString("N") + ".json");
+            string executable = Assembly.GetExecutingAssembly().Location;
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = executable,
+                Arguments = "--import-hash " + ImportProcessRunner.QuoteArgument(path) + " " +
+                    ImportProcessRunner.QuoteArgument(resultPath) + " " + fileLength.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                WorkingDirectory = Path.GetDirectoryName(executable),
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+            operation.SetStage(index, "隔离计算音频指纹");
+            ImportProcessResult process = ImportProcessRunner.Run(startInfo, operation, ImportTimeoutPolicy.FingerprintTotalMilliseconds(fileLength), 0);
+            AudioFileFingerprintResult result = new AudioFileFingerprintResult { ElapsedMilliseconds = process.ElapsedMilliseconds, CleanupSafe = process.CleanupSafe };
+            if (process.Status == ImportProcessStatus.Cancelled || operation.IsCancelled)
+            {
+                result.Message = "已取消。";
+                SafeDelete(resultPath, operation.CanCleanup);
+                return result;
+            }
+            if (process.Status == ImportProcessStatus.TimedOut)
+            {
+                result.Message = "计算音频指纹超过时间上限。";
+                SafeDelete(resultPath, process.CleanupSafe && operation.CanCleanup);
+                return result;
+            }
+            if (process.Status != ImportProcessStatus.Exited || !process.CleanupSafe || process.ExitCode != 0)
+            {
+                result.Message = "指纹工作进程未能安全完成。";
+                return result;
+            }
+            try
+            {
+                Dictionary<string, object> response = ReadSmallResult(resultPath);
+                string status = ReadText(response, "status");
+                string hash = ReadText(response, "sha256");
+                if (status != "ok" || hash.Length != 64) throw new InvalidDataException("指纹结果无效。");
+                foreach (char ch in hash) if (!Uri.IsHexDigit(ch)) throw new InvalidDataException("指纹结果格式无效。");
+                result.Success = true;
+                result.Sha256 = hash;
+            }
+            catch (Exception ex) { result.Message = "指纹结果无效：" + ex.GetType().Name; }
+            finally { SafeDelete(resultPath, operation.CanCleanup); }
+            return result;
+        }
+
         public static AudioFileInspectionResult Inspect(string path, string taskDirectory, int index, SongImportOperation operation)
         {
             if (operation == null) throw new ArgumentNullException("operation");
@@ -514,6 +658,84 @@ namespace BgmHotkey
                 try { if (File.Exists(destination)) File.Delete(destination); } catch { }
                 return 1;
             }
+        }
+
+        public static int RunHashWorker(string[] args)
+        {
+            if (args == null || args.Length != 4 || args[0] != "--import-hash") return 2;
+            string source = Path.GetFullPath(args[1]);
+            string resultPath = Path.GetFullPath(args[2]);
+            long expectedLength;
+            if (!Int64.TryParse(args[3], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out expectedLength) || expectedLength < 0 ||
+                !IsSafeResultPath(resultPath, "hash_", ".json")) return 2;
+            try
+            {
+                FileInfo before = new FileInfo(source);
+                if (!before.Exists || before.Length != expectedLength) throw new IOException("源文件长度与预期不符。");
+                DateTime write = before.LastWriteTimeUtc;
+                string hash = LoudnessAnalyzer.Fingerprint(source);
+                FileInfo after = new FileInfo(source);
+                if (!after.Exists || after.Length != expectedLength || after.LastWriteTimeUtc != write) throw new IOException("计算指纹期间源文件发生变化。");
+                WriteWorkerResult(resultPath, new Dictionary<string, object> { { "status", "ok" }, { "sha256", hash } });
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                try { WriteWorkerResult(resultPath, new Dictionary<string, object> { { "status", "failed" }, { "errorType", ex.GetType().Name } }); } catch { }
+                return 1;
+            }
+        }
+
+        public static int RunLoudnessWorker(string[] args)
+        {
+            if (args == null || args.Length != 6 || args[0] != "--import-loudness") return 2;
+            string source = Path.GetFullPath(args[1]);
+            string resultPath = Path.GetFullPath(args[2]);
+            long expectedLength;
+            double target;
+            int timeout;
+            if (!Int64.TryParse(args[3], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out expectedLength) || expectedLength < 0 ||
+                !Double.TryParse(args[4], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out target) ||
+                !Int32.TryParse(args[5], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out timeout) || timeout < 1000 ||
+                !IsSafeResultPath(resultPath, "loudness_", ".json")) return 2;
+
+            Dictionary<string, object> response = null;
+            Exception workerError = null;
+            Thread analyzer = new Thread(new ThreadStart(delegate
+            {
+                try
+                {
+                    FileInfo before = new FileInfo(source);
+                    if (!before.Exists || before.Length != expectedLength) throw new IOException("源文件长度与预期不符。");
+                    DateTime write = before.LastWriteTimeUtc;
+                    string fingerprint = LoudnessAnalyzer.Fingerprint(source);
+                    LoudnessAnalysisResult measured = LoudnessAnalyzer.Analyze(source, target);
+                    FileInfo after = new FileInfo(source);
+                    if (!after.Exists || after.Length != expectedLength || after.LastWriteTimeUtc != write) throw new IOException("响度测量期间源文件发生变化。");
+                    response = new Dictionary<string, object>
+                    {
+                        { "status", measured.HasMeasurement ? "measured" : "noMeasurement" },
+                        { "sha256", fingerprint }, { "integratedLufs", measured.IntegratedLufs },
+                        { "peakDbfs", measured.PeakDbfs }, { "gainDb", measured.GainDb }
+                    };
+                }
+                catch (Exception ex) { workerError = ex; }
+            }));
+            analyzer.IsBackground = true;
+            analyzer.Name = "Isolated loudness analysis";
+            analyzer.Start();
+            if (!analyzer.Join(timeout))
+            {
+                WriteWorkerResult(resultPath, new Dictionary<string, object> { { "status", "timedOut" } });
+                return 0;
+            }
+            if (workerError != null)
+            {
+                try { WriteWorkerResult(resultPath, new Dictionary<string, object> { { "status", "failed" }, { "errorType", workerError.GetType().Name } }); } catch { }
+                return 1;
+            }
+            WriteWorkerResult(resultPath, response);
+            return 0;
         }
 
         public static int RunInspectWorker(string[] args)

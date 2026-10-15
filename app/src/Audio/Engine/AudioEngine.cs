@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading;
 
@@ -85,7 +85,7 @@ namespace BgmHotkey
         private int _nextSessionId;
         private int _sessionId;
         private int _seekGeneration;
-        private int _resetOutputPending;
+        private int _resetHeadphonesPending;
         private double _lastPositionSeconds;
         private double _lastDurationSeconds;
         private double _segmentStartSeconds;
@@ -155,6 +155,25 @@ namespace BgmHotkey
             };
         }
 
+        internal static bool CanCompleteTrackStart(Mp3StreamPlayer activePlayer, Mp3StreamPlayer candidatePlayer,
+            int activeSessionId, int candidateSessionId, bool loading)
+        {
+            return activePlayer != null && Object.ReferenceEquals(activePlayer, candidatePlayer) &&
+                activeSessionId == candidateSessionId && loading;
+        }
+
+        internal static bool RequiresPcmHeadphoneOutput(bool active, bool directHeadphonePlayback)
+        {
+            return active && !directHeadphonePlayback;
+        }
+
+        internal static bool StartDirectPlaybackIfAccepted(DirectMp3Player player, bool sessionAccepted, double startSeconds, double? endSeconds)
+        {
+            if (player == null || !sessionAccepted) return false;
+            player.Start(startSeconds, endSeconds);
+            return true;
+        }
+
         public string StatusText
         {
             get
@@ -195,6 +214,24 @@ namespace BgmHotkey
             lock (_deviceGate)
             {
                 CloseDevices();
+                bool restorePcmHeadphones;
+                lock (_stateGate) restorePcmHeadphones = RequiresPcmHeadphoneOutput(_playing || _loading, _directHeadphonePlayback);
+                string headphoneStatus = "耳机输出：Windows 默认播放设备（MP3 原生 MCI 可用时使用，否则走同步 PCM）";
+                if (restorePcmHeadphones)
+                {
+#if TEST_BUILD
+                    if (!_suppressHardwareOutput)
+#endif
+                    try
+                    {
+                        _headphones = new WaveOutSink(WinMm.Mapper, "Windows 默认播放设备");
+                    }
+                    catch (Exception ex)
+                    {
+                        headphoneStatus += Environment.NewLine + "当前 PCM 播放会话未能恢复耳机输出：" + ex.Message;
+                        AppPaths.Log("刷新音频设备后无法恢复当前 PCM 耳机输出：" + ex);
+                    }
+                }
                 AudioDevice microphone = _catalog.FindMicrophone(_settings.MicrophoneDeviceName);
                 AudioDevice cable = _catalog.FindCable(_settings.CableDeviceName);
                 if (String.IsNullOrWhiteSpace(_settings.CableDeviceName))
@@ -242,7 +279,7 @@ namespace BgmHotkey
                 }
 
                 lock (_stateGate)
-                    _deviceStatus = microphoneStatus + Environment.NewLine + "耳机输出：Windows 默认播放设备（MP3 原生 MCI 可用时使用，否则走同步 PCM）" + Environment.NewLine + cableStatus +
+                    _deviceStatus = microphoneStatus + Environment.NewLine + headphoneStatus + Environment.NewLine + cableStatus +
                         Environment.NewLine + "游戏语音输入请选择：CABLE Output（VB-Audio Virtual Cable）";
                 AppPaths.Log("音频路由：" + _deviceStatus.Replace(Environment.NewLine, " | "));
             }
@@ -390,7 +427,7 @@ namespace BgmHotkey
                 {
                     try
                     {
-                        direct = new DirectMp3Player(AppPaths.TrackPath(track.FileName), startSeconds, endSeconds, volume, track.GainLinear);
+                        direct = new DirectMp3Player(AppPaths.TrackPath(track.FileName), volume, track.GainLinear);
                         directHeadphonePlayback = true;
                     }
                     catch (Exception ex)
@@ -403,9 +440,14 @@ namespace BgmHotkey
                 }
                 lock (_stateGate)
                 {
-                    if (_streamPlayer != player || _sessionId != sessionId || !_loading)
+                    if (!CanCompleteTrackStart(_streamPlayer, player, _sessionId, sessionId, _loading))
                     {
                         if (direct != null) direct.Dispose();
+                        return;
+                    }
+                    if (direct != null && !StartDirectPlaybackIfAccepted(direct, true, startSeconds, endSeconds))
+                    {
+                        direct.Dispose();
                         return;
                     }
                     _directPlayer = direct;
@@ -420,7 +462,6 @@ namespace BgmHotkey
                         : isMp3
                         ? "正在播放：" + track.Name + (directHeadphonePlayback ? "（耳机原生 MP3；CABLE 独立混音）" : "（MP3 同步流式输出到耳机与 CABLE）")
                         : "正在播放：" + track.Name + "（流式音频；耳机与 CABLE 独立音量）";
-                    Interlocked.Exchange(ref _resetOutputPending, 1);
                 }
             }
             catch (Exception ex)
@@ -481,7 +522,7 @@ namespace BgmHotkey
                 _sessionId = ++_nextSessionId;
                 _seekGeneration++;
                 _playbackStatus = "已停止";
-                Interlocked.Exchange(ref _resetOutputPending, 1);
+                Interlocked.Exchange(ref _resetHeadphonesPending, 1);
             }
             if (stream != null) { stream.Cancel(); ThreadPool.QueueUserWorkItem(delegate { stream.Dispose(); }); }
             if (direct != null) direct.Dispose();
@@ -564,7 +605,7 @@ namespace BgmHotkey
                     generation = ++_seekGeneration;
                     _playbackError = "";
                     _playbackStatus = "正在跳转…";
-                    Interlocked.Exchange(ref _resetOutputPending, 1);
+                    Interlocked.Exchange(ref _resetHeadphonesPending, 1);
                 }
             }
             if (newPlayer == null)
@@ -660,7 +701,7 @@ namespace BgmHotkey
                         _playbackError = "跳转失败：" + ex.Message;
                         _playbackStatus = _playbackError;
                         _sessionId = ++_nextSessionId;
-                        Interlocked.Exchange(ref _resetOutputPending, 1);
+                        Interlocked.Exchange(ref _resetHeadphonesPending, 1);
                     }
                 }
                 if (ownsSession)
@@ -725,9 +766,8 @@ namespace BgmHotkey
                             if (!_playing || _sessionId != musicSessionId || _seekGeneration != musicGeneration)
                                 Array.Clear(music, 0, music.Length);
                     }
-                    if (Interlocked.Exchange(ref _resetOutputPending, 0) != 0)
+                    if (Interlocked.Exchange(ref _resetHeadphonesPending, 0) != 0)
                     {
-                        try { if (_cable != null) _cable.ResetPlayback(); } catch (Exception ex) { AppPaths.Log("重置 CABLE 播放缓冲失败：" + ex.Message); }
                         try { if (_headphones != null) _headphones.ResetPlayback(); } catch (Exception ex) { AppPaths.Log("重置耳机播放缓冲失败：" + ex.Message); }
                     }
                     if (_microphone != null)

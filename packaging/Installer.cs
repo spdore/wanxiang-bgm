@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
@@ -12,8 +13,8 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: TargetFramework(".NETFramework,Version=v4.8")]
-[assembly: AssemblyVersion("1.9.7.0")]
-[assembly: AssemblyFileVersion("1.9.7.0")]
+[assembly: AssemblyVersion("1.9.8.0")]
+[assembly: AssemblyFileVersion("1.9.8.0")]
 [assembly: AssemblyTitle("Wanxiang BGM Player Installer")]
 
 internal static class Installer
@@ -104,6 +105,7 @@ internal static class Installer
     internal static string InstallDriver() {
         if (!ShouldInstallCable(HasCable())) return "已检测到 VB-CABLE，无需重新安装。";
         string temporary = Path.Combine(Path.GetTempPath(), "WanxiangBgm-VBCABLE-" + Guid.NewGuid().ToString("N"));
+        bool keepTemporary = false;
         Directory.CreateDirectory(temporary);
         try {
             string archive = Path.Combine(temporary, "VB-CABLE.zip");
@@ -114,11 +116,23 @@ internal static class Installer
             try { process = Process.Start(new ProcessStartInfo(setup) { UseShellExecute = true, Verb = "runas", WorkingDirectory = directory }); }
             catch (Win32Exception ex) { if (IsElevationCancelled(ex.NativeErrorCode)) return "你取消了管理员授权；播放器已安装，VB-CABLE 尚未安装。可重新运行安装包安装驱动。"; throw; }
             if (process == null) return "无法启动 VB-CABLE 官方安装程序。";
-            using (process) { while (!process.WaitForExit(100)) Application.DoEvents(); }
+            using (process)
+            {
+                Stopwatch wait = Stopwatch.StartNew();
+                while (!process.WaitForExit(100))
+                {
+                    Application.DoEvents();
+                    if (wait.ElapsedMilliseconds >= 30L * 60 * 1000)
+                    {
+                        keepTemporary = true;
+                        throw new TimeoutException("VB-CABLE 官方安装程序已运行 30 分钟，等待已停止。请先检查或关闭驱动安装窗口，然后使用“重试 VB-CABLE”；临时文件已保留在 " + temporary);
+                    }
+                }
+            }
             for (int i = 0; i < 20 && !HasCable(); i++) { Thread.Sleep(250); Application.DoEvents(); }
             return CableInstallStatus(HasCable());
         } finally {
-            if (Path.GetFullPath(temporary).StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase))
+            if (!keepTemporary && Path.GetFullPath(temporary).StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase))
                 try { Directory.Delete(temporary, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
     }
@@ -153,6 +167,7 @@ internal static class Installer
         if (!ShouldInstallWebView2Runtime(HasWebView2Runtime(out installedVersion))) { report("已检测到 WebView2 Runtime " + installedVersion + "，跳过安装。"); return; }
         report("缺少 WebView2 Runtime，正在通过微软官方 Bootstrapper 联网安装…");
         string temporary = Path.Combine(Path.GetTempPath(), "WanxiangBgm-WebView2-" + Guid.NewGuid().ToString("N"));
+        bool keepTemporary = false;
         Directory.CreateDirectory(temporary);
         try
         {
@@ -161,7 +176,16 @@ internal static class Installer
             using (Process process = Process.Start(new ProcessStartInfo(setup, "/silent /install") { UseShellExecute = false, WorkingDirectory = temporary }))
             {
                 if (process == null) throw new InvalidOperationException("无法启动微软官方 WebView2 Bootstrapper。");
-                while (!process.WaitForExit(100)) Application.DoEvents();
+                Stopwatch wait = Stopwatch.StartNew();
+                while (!process.WaitForExit(100))
+                {
+                    Application.DoEvents();
+                    if (wait.ElapsedMilliseconds >= 10L * 60 * 1000)
+                    {
+                        keepTemporary = true;
+                        throw new TimeoutException("Microsoft WebView2 Bootstrapper 已运行 10 分钟，等待已停止。请检查网络或安装进程后重试；临时文件已保留在 " + temporary);
+                    }
+                }
                 int code = process.ExitCode;
                 if (!IsWebView2InstallVerified(HasWebView2Runtime(out installedVersion)))
                     throw new InvalidOperationException("微软 Bootstrapper 未能安装 WebView2 Runtime（退出代码 " + code + "）。缺少 Runtime 时需要联网访问 Microsoft 下载服务；请检查网络或组织策略后重试。");
@@ -170,7 +194,7 @@ internal static class Installer
         }
         finally
         {
-            if (Path.GetFullPath(temporary).StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase))
+            if (!keepTemporary && Path.GetFullPath(temporary).StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase))
                 try { Directory.Delete(temporary, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
     }
@@ -253,6 +277,89 @@ internal static class Installer
         }
     }
 
+    private sealed class FileCommitRecord
+    {
+        public string StagedPath;
+        public string TargetPath;
+        public string BackupPath;
+        public bool PreviousMoved;
+        public bool NewMoved;
+    }
+
+    internal static void CommitFileSet(string stagedDirectory, string installDirectory, string[] fileNames, Action<int> afterCommit)
+    {
+        string stageRoot = Path.GetFullPath(stagedDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        string installRoot = Path.GetFullPath(installDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!Directory.Exists(stagedDirectory) || !Directory.Exists(installDirectory)) throw new DirectoryNotFoundException("安装暂存目录不存在。");
+        string backupDirectory = Path.Combine(installDirectory, ".rollback-" + Guid.NewGuid().ToString("N"));
+        List<FileCommitRecord> records = new List<FileCommitRecord>();
+        foreach (string name in fileNames ?? new string[0])
+        {
+            if (String.IsNullOrWhiteSpace(name) || Path.GetFileName(name) != name) throw new InvalidDataException("安装文件名无效。");
+            string staged = Path.GetFullPath(Path.Combine(stagedDirectory, name));
+            string target = Path.GetFullPath(Path.Combine(installDirectory, name));
+            if (!staged.StartsWith(stageRoot, StringComparison.OrdinalIgnoreCase) || !target.StartsWith(installRoot, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("安装文件路径越出指定目录。");
+            if (!File.Exists(staged)) throw new FileNotFoundException("安装暂存文件不完整。", staged);
+            if (Directory.Exists(target)) throw new IOException("安装目标被同名文件夹占用：" + name);
+            records.Add(new FileCommitRecord { StagedPath = staged, TargetPath = target, BackupPath = Path.Combine(backupDirectory, name) });
+        }
+
+        Directory.CreateDirectory(backupDirectory);
+        int committed = 0;
+        try
+        {
+            foreach (FileCommitRecord record in records)
+            {
+                if (File.Exists(record.TargetPath))
+                {
+                    File.Move(record.TargetPath, record.BackupPath);
+                    record.PreviousMoved = true;
+                }
+                File.Move(record.StagedPath, record.TargetPath);
+                record.NewMoved = true;
+                committed++;
+                if (afterCommit != null) afterCommit(committed);
+            }
+        }
+        catch (Exception installError)
+        {
+            Exception rollbackError = null;
+            for (int i = records.Count - 1; i >= 0; i--)
+            {
+                FileCommitRecord record = records[i];
+                try
+                {
+                    if (record.NewMoved && File.Exists(record.TargetPath)) File.Delete(record.TargetPath);
+                    if (record.PreviousMoved && File.Exists(record.BackupPath)) File.Move(record.BackupPath, record.TargetPath);
+                }
+                catch (Exception ex) { if (rollbackError == null) rollbackError = ex; }
+            }
+            if (rollbackError == null)
+            {
+                TryDeleteDirectory(backupDirectory);
+                throw new InvalidOperationException("安装文件提交失败，已恢复上一套程序文件。", installError);
+            }
+            throw new InvalidOperationException("安装文件提交失败，且无法完整恢复。请保留并检查恢复目录：" + backupDirectory, new AggregateException(installError, rollbackError));
+        }
+
+        TryDeleteDirectory(backupDirectory);
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try { if (Directory.Exists(path)) Directory.Delete(path, true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private static void ValidateStagedPlayer(string path)
+    {
+        if (!File.Exists(path) || new FileInfo(path).Length < 1024 * 1024) throw new InvalidDataException("播放器暂存文件缺失或长度异常。");
+        AssemblyName identity = AssemblyName.GetAssemblyName(path);
+        if (identity == null || identity.Version != new Version(1, 9, 7, 0)) throw new InvalidDataException("播放器暂存文件版本与安装器不匹配。");
+    }
+
     internal static void Install(bool desktopShortcut, Action<string> report)
     {
         CheckNotRunning();
@@ -267,18 +374,28 @@ internal static class Installer
         InstallWebView2Runtime(report);
         report("正在安装播放器文件与快捷方式…");
         Directory.CreateDirectory(Folder);
-        WriteResource("Player", Path.Combine(Folder, "BgmHotkey.exe"));
-        WriteResource("IconLicense", Path.Combine(Folder, "Tabler-LICENSE.txt"));
-        WriteResource("WebLicense", Path.Combine(Folder, "WebView2-LICENSE.txt"));
-        WriteResource("WebNotice", Path.Combine(Folder, "WebView2-NOTICE.txt"));
-        WriteResource("MusicConverterNotice", Path.Combine(Folder, "MusicConverter-NOTICES.txt"));
-        WriteResource("WebCore", Path.Combine(Folder, "Microsoft.Web.WebView2.Core.dll"));
-        WriteResource("WebForms", Path.Combine(Folder, "Microsoft.Web.WebView2.WinForms.dll"));
-        WriteResource(Environment.Is64BitOperatingSystem ? "WebLoader64" : "WebLoader32", Path.Combine(Folder, "WebView2Loader.dll"));
-        WriteResource("Config", Path.Combine(Folder, "BgmHotkey.exe.config"));
-        WriteResource("Guide", Path.Combine(Folder, "Installation Guide.txt"));
-        WriteResource("Uninstaller", Path.Combine(Folder, "Uninstall.exe"));
-        WriteResource("Config", Path.Combine(Folder, "Uninstall.exe.config"));
+        string stage = Path.Combine(Folder, ".install-stage-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(stage);
+        string[] installedFiles = new string[] { "BgmHotkey.exe", "Tabler-LICENSE.txt", "WebView2-LICENSE.txt", "WebView2-NOTICE.txt", "MusicConverter-NOTICES.txt",
+            "Microsoft.Web.WebView2.Core.dll", "Microsoft.Web.WebView2.WinForms.dll", "WebView2Loader.dll", "BgmHotkey.exe.config", "Installation Guide.txt", "Uninstall.exe", "Uninstall.exe.config" };
+        try
+        {
+            WriteResource("Player", Path.Combine(stage, "BgmHotkey.exe"));
+            WriteResource("IconLicense", Path.Combine(stage, "Tabler-LICENSE.txt"));
+            WriteResource("WebLicense", Path.Combine(stage, "WebView2-LICENSE.txt"));
+            WriteResource("WebNotice", Path.Combine(stage, "WebView2-NOTICE.txt"));
+            WriteResource("MusicConverterNotice", Path.Combine(stage, "MusicConverter-NOTICES.txt"));
+            WriteResource("WebCore", Path.Combine(stage, "Microsoft.Web.WebView2.Core.dll"));
+            WriteResource("WebForms", Path.Combine(stage, "Microsoft.Web.WebView2.WinForms.dll"));
+            WriteResource(Environment.Is64BitOperatingSystem ? "WebLoader64" : "WebLoader32", Path.Combine(stage, "WebView2Loader.dll"));
+            WriteResource("Config", Path.Combine(stage, "BgmHotkey.exe.config"));
+            WriteResource("Guide", Path.Combine(stage, "Installation Guide.txt"));
+            WriteResource("Uninstaller", Path.Combine(stage, "Uninstall.exe"));
+            WriteResource("Config", Path.Combine(stage, "Uninstall.exe.config"));
+            ValidateStagedPlayer(Path.Combine(stage, "BgmHotkey.exe"));
+            CommitFileSet(stage, Folder, installedFiles, null);
+        }
+        finally { TryDeleteDirectory(stage); }
         Directory.CreateDirectory(MenuFolder);
         Shortcut(Path.Combine(MenuFolder, "万象 BGM 播放器.lnk"), Path.Combine(Folder, "BgmHotkey.exe"), "");
         Shortcut(Path.Combine(MenuFolder, "卸载万象 BGM 播放器.lnk"), Path.Combine(Folder, "Uninstall.exe"), "/uninstall");
@@ -287,7 +404,7 @@ internal static class Installer
         using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath))
         {
             key.SetValue("DisplayName", "万象 BGM 播放器");
-            key.SetValue("DisplayVersion", "1.9.7");
+            key.SetValue("DisplayVersion", "1.9.8");
             key.SetValue("InstallLocation", Folder);
             key.SetValue("DisplayIcon", Path.Combine(Folder, "BgmHotkey.exe"));
             key.SetValue("UninstallString", "\"" + Path.Combine(Folder, "Uninstall.exe") + "\" /uninstall");
